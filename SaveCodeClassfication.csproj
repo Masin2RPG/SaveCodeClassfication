@@ -53,5 +53,8 @@
   <ItemGroup Condition="Exists('mainIcon.ico')">
     <Content Include="mainIcon.ico" />
   </ItemGroup>
+  <ItemGroup>
+    <Folder Include="Views\" />
+  </ItemGroup>
 
 </Project>
