@@ -1,0 +1,29 @@
+function PreloadFiles takes nothing returns nothing
+
+	call PreloadStart()
+	call Preload( "----------------- Save Code ------------------" )
+	call Preload( "Code: 7YYYK-OYYYY-VTYYY-YV6YY-YY3G2-N3A1O-AF11T-EYY " )
+	call Preload( "----------------- Data Stats -----------------" )
+	call Preload( "금: 9999900" )
+	call Preload( "나무: 999900" )
+	call Preload( "캐릭터: |cff323232도박의 신" )
+	call Preload( "레벨: 2000" )
+	call Preload( "경험치: 200096768" )
+	call Preload( "무력: 999999" )
+	call Preload( "요력: 999999" )
+	call Preload( "영력: 999999" )
+	call Preload( "아이템1: '|cff1c6406전무 - 세계수|R'" )
+	call Preload( "아이템2: '|cffff0000멸망을 부르는 피의 잔'" )
+	call Preload( "아이템3: '|cffff0000심판하는자의 전능한 영혼'" )
+	call Preload( "아이템4: '|cffCC47AD최초의 금지된 성서'" )
+	call Preload( "아이템5: '|cff96C7ED희망과 절망의 대천사 [전능]|R'" )
+	call Preload( "아이템6: '|cff7B68EE교만의 마력'" )
+	call Preload( "---------------- Chat Message ----------------" )
+	call Preload( "-save" )
+	call Preload( "마신 RPG 카페: http://cafe.naver.com/masinrpg" )
+	call Preload( "버전:마신Rpg 격변 5.48" )
+	call PreloadEnd( 0.0 )
+
+endfunction
+
+

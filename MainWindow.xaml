@@ -1,0 +1,292 @@
+﻿<Window x:Class="SaveCodeClassfication.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:SaveCodeClassfication"
+        mc:Ignorable="d"
+        Title="Masin 세이브코드 분류" Height="700" Width="1400"
+        WindowStartupLocation="CenterScreen"
+        Icon="mainIcon.png">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        
+        <Grid Grid.Row="0" Margin="20">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="250"/>
+                <ColumnDefinition Width="5"/>
+                <ColumnDefinition Width="400"/>
+                <ColumnDefinition Width="5"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            
+            <!-- Left Panel: Folder Selection -->
+            <StackPanel Grid.Column="0">
+                
+                <!-- Header -->
+                <Border Background="#f0f0f0" CornerRadius="5" Padding="15" Margin="0,0,0,20">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="📁" FontSize="20" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                        <TextBlock Text="Masin 세이브코드 분류" FontSize="16" FontWeight="Bold" 
+                                  VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+                
+                <!-- Folder Selection Section -->
+                <GroupBox Header="폴더 설정" Margin="0,0,0,20" Padding="15">
+                    <StackPanel>
+                        <DockPanel Margin="0,0,0,10">
+                            <Button Name="BtnChangeFolder" Content="폴더 변경" 
+                                      Background="#FF9800" Foreground="White"
+                                      Click="BtnSelectFolder_Click" 
+                                      Height="30" MinWidth="80" DockPanel.Dock="Right"
+                                      Padding="10,5" FontSize="12" Margin="5,0,0,0"/>
+                            <Button Name="BtnReloadFolder" Content="새로고침" 
+                                      Background="#4CAF50" Foreground="White"
+                                      Click="BtnReloadFolder_Click" 
+                                      Height="30" MinWidth="80" DockPanel.Dock="Right"
+                                      Padding="10,5" FontSize="12"/>
+                        </DockPanel>
+                        
+                        <TextBox Name="TxtFolderPath" 
+                                Text="저장된 폴더를 자동으로 로드합니다..."
+                                IsReadOnly="True"
+                                Foreground="Gray"
+                                Padding="8"
+                                VerticalContentAlignment="Center"
+                                TextWrapping="Wrap"
+                                MinHeight="60"/>
+                        
+                        <StackPanel Orientation="Vertical" Margin="0,10,0,0">
+                            <Border Name="TagFolderInfo" Background="#e3f2fd" CornerRadius="3" 
+                                   Padding="8,4" Margin="0,0,0,5">
+                                <TextBlock Text="앱 시작 시 자동으로 폴더를 로드합니다" FontSize="12"/>
+                            </Border>
+                            <Border Name="TagFileCount" Background="#e8f5e8" CornerRadius="3" 
+                                   Padding="8,4" Visibility="Collapsed">
+                                <TextBlock Name="TagFileCountText" FontSize="12"/>
+                            </Border>
+                        </StackPanel>
+                    </StackPanel>
+                </GroupBox>
+                
+                <!-- Analysis Button -->
+                <Button Name="BtnAnalyzeFiles" Content="파일 분석" 
+                        Background="#4CAF50" Foreground="White"
+                        Click="BtnAnalyzeFiles_Click" 
+                        Height="40" Padding="15,8"
+                        FontSize="14" Margin="0,0,0,10"
+                        IsEnabled="False"/>
+                
+                <!-- Cache Management -->
+                <GroupBox Header="캐시 관리" Margin="0,0,0,20" Padding="10">
+                    <StackPanel>
+                        <Button Name="BtnClearCache" Content="캐시 삭제" 
+                                Background="#f44336" Foreground="White"
+                                Click="BtnClearCache_Click" 
+                                Height="35" Padding="10,5"
+                                FontSize="12" Margin="0,0,0,5"/>
+                        <TextBlock Name="TxtCacheInfo" Text="캐시 상태: 정보 없음" 
+                                  FontSize="10" Foreground="Gray" 
+                                  TextWrapping="Wrap"/>
+                    </StackPanel>
+                </GroupBox>
+                
+            </StackPanel>
+            
+            <!-- Splitter 1 - 크기 조절 비활성화 -->
+            <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch" 
+                         Background="#ddd" IsEnabled="False"/>
+            
+            <!-- Middle Panel: Character List -->
+            <GroupBox Grid.Column="2" Header="캐릭터 목록" Padding="15">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    
+                    <DockPanel Grid.Row="0" Margin="0,0,0,10">
+                        <Button Name="BtnClearCharacters" Content="초기화" 
+                                  Background="#ff9800" Foreground="White"
+                                  Click="BtnClearCharacters_Click" 
+                                  MinWidth="70" Height="30" DockPanel.Dock="Right"
+                                  Padding="10,5" FontSize="12"/>
+                        <StackPanel Orientation="Vertical">
+                            <TextBlock Text="캐릭터별 세이브 코드" FontWeight="Bold" FontSize="12"/>
+                            <TextBlock Name="TxtCharacterCount" Text="분석된 캐릭터: 0개" 
+                                      FontSize="10" Foreground="Gray"/>
+                        </StackPanel>
+                    </DockPanel>
+                    
+                    <ListBox Name="LstCharacters" Grid.Row="1"
+                            SelectionChanged="LstCharacters_SelectionChanged">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Vertical" Margin="5">
+                                    <TextBlock Text="{Binding CharacterName}" FontWeight="Bold" FontSize="13"
+                                              TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding SaveCodeCount}" FontSize="10" Foreground="Gray"
+                                              TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding LastModified}" FontSize="9" Foreground="DarkGray"
+                                              TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </GroupBox>
+            
+            <!-- Splitter 2 - 크기 조절 비활성화 -->
+            <GridSplitter Grid.Column="3" Width="5" HorizontalAlignment="Stretch" 
+                         Background="#ddd" IsEnabled="False"/>
+            
+            <!-- Right Panel: Save Code Display -->
+            <GroupBox Grid.Column="4" Header="세이브 코드" Padding="15">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    
+                    <!-- Character Info -->
+                    <Border Grid.Row="0" Background="#f8f9fa" CornerRadius="5" 
+                           Padding="15" Margin="0,0,0,15">
+                        <StackPanel Orientation="Vertical">
+                            <DockPanel>
+                                <Button Name="BtnCopyCode" Content="코드 복사" 
+                                          Background="#2196f3" Foreground="White"
+                                          Click="BtnCopyCode_Click"
+                                          MinWidth="80" Height="30" DockPanel.Dock="Right"
+                                          Padding="10,5" FontSize="12"/>
+                                <StackPanel Orientation="Vertical">
+                                    <TextBlock Name="TxtSelectedCharacter" Text="캐릭터를 선택해주세요" 
+                                              FontWeight="Bold" FontSize="16" TextWrapping="Wrap"/>
+                                    <TextBlock Name="TxtSelectedInfo" Text="캐릭터를 선택하면 세이브 코드가 표시됩니다" 
+                                              FontSize="12" Foreground="Gray" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </DockPanel>
+                        </StackPanel>
+                    </Border>
+                    
+                    <!-- Save Code List -->
+                    <GroupBox Grid.Row="1" Header="세이브 코드 목록" Padding="10">
+                        <ListBox Name="LstSaveCodes"
+                                SelectionChanged="LstSaveCodes_SelectionChanged">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Vertical" Margin="5">
+                                        <DockPanel>
+                                            <TextBlock Text="{Binding FileDate, StringFormat='yyyy-MM-dd HH:mm'}" 
+                                                      FontSize="9" Foreground="Gray" DockPanel.Dock="Right" 
+                                                      VerticalAlignment="Top"/>
+                                            <TextBlock Text="{Binding FileName}" FontWeight="Bold" FontSize="11" 
+                                                      TextWrapping="Wrap"/>
+                                        </DockPanel>
+                                        
+                                        <Border Background="#f0f8ff" CornerRadius="3" Padding="8,4" Margin="0,3,0,0">
+                                            <StackPanel Orientation="Vertical">
+                                                <DockPanel>
+                                                    <TextBlock Text="코드:" FontWeight="Bold" FontSize="10" 
+                                                              Foreground="DarkBlue" DockPanel.Dock="Left" Margin="0,0,5,0"/>
+                                                    <TextBox Text="{Binding SaveCode}" FontFamily="Consolas" 
+                                                            FontSize="10" Foreground="DarkBlue" Background="Transparent"
+                                                            BorderThickness="0" IsReadOnly="True" TextWrapping="Wrap"/>
+                                                </DockPanel>
+                                                
+                                                <StackPanel Orientation="Vertical" Margin="0,3,0,0">
+                                                    <DockPanel>
+                                                        <TextBlock Text="레벨:" FontWeight="Bold" FontSize="10" 
+                                                                  Foreground="DarkGreen" DockPanel.Dock="Left" Margin="0,0,5,0"/>
+                                                        <TextBlock Text="{Binding Level}" FontSize="10" 
+                                                                  Foreground="DarkGreen" DockPanel.Dock="Left" Margin="0,0,15,0"/>
+                                                        <TextBlock Text="금:" FontWeight="Bold" FontSize="10" 
+                                                                  Foreground="Orange" DockPanel.Dock="Left" Margin="0,0,5,0"/>
+                                                        <TextBlock Text="{Binding Gold}" FontSize="10" 
+                                                                  Foreground="Orange" DockPanel.Dock="Left" Margin="0,0,15,0"/>
+                                                        <TextBlock Text="나무:" FontWeight="Bold" FontSize="10" 
+                                                                  Foreground="Brown" DockPanel.Dock="Left" Margin="0,0,5,0"/>
+                                                        <TextBlock Text="{Binding Wood}" FontSize="10" 
+                                                                  Foreground="Brown"/>
+                                                    </DockPanel>
+                                                
+                                                    <DockPanel Margin="0,2,0,0">
+                                                        <TextBlock Text="무력:" FontWeight="Bold" FontSize="10" 
+                                                                  Foreground="Red" DockPanel.Dock="Left" Margin="0,0,5,0"/>
+                                                        <TextBlock Text="{Binding PhysicalPower}" FontSize="10" 
+                                                                  Foreground="Red" DockPanel.Dock="Left" Margin="0,0,15,0"/>
+                                                        <TextBlock Text="요력:" FontWeight="Bold" FontSize="10" 
+                                                                  Foreground="Blue" DockPanel.Dock="Left" Margin="0,0,5,0"/>
+                                                        <TextBlock Text="{Binding MagicalPower}" FontSize="10" 
+                                                                  Foreground="Blue" DockPanel.Dock="Left" Margin="0,0,15,0"/>
+                                                        <TextBlock Text="영력:" FontWeight="Bold" FontSize="10" 
+                                                                  Foreground="Purple" DockPanel.Dock="Left" Margin="0,0,5,0"/>
+                                                        <TextBlock Text="{Binding SpiritualPower}" FontSize="10" 
+                                                                  Foreground="Purple"/>
+                                                    </DockPanel>
+                                                
+                                                    <DockPanel Margin="0,2,0,0">
+                                                        <TextBlock Text="경험치:" FontWeight="Bold" FontSize="10" 
+                                                                  Foreground="DarkCyan" DockPanel.Dock="Left" Margin="0,0,5,0"/>
+                                                        <TextBlock Text="{Binding Experience}" FontSize="10" 
+                                                                  Foreground="DarkCyan" TextWrapping="Wrap"/>
+                                                    </DockPanel>
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </Border>
+                                        
+                                        <Border Background="#fff8f0" CornerRadius="3" Padding="8,4" Margin="0,2,0,0">
+                                            <StackPanel Orientation="Vertical">
+                                                <TextBlock Text="장착 아이템:" FontWeight="Bold" FontSize="10" 
+                                                          Foreground="Purple" Margin="0,0,0,2"/>
+                                                <ItemsControl ItemsSource="{Binding Items}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <TextBlock Text="{Binding}" FontSize="9" 
+                                                                      Foreground="DarkMagenta" TextWrapping="Wrap" 
+                                                                      Margin="0,1"/>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </GroupBox>
+                    
+                    <!-- Selected Code Display -->
+                    <GroupBox Grid.Row="2" Header="선택된 세이브 코드" Padding="10" MaxHeight="150">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <TextBox Name="TxtSelectedCode" 
+                                    FontFamily="Consolas"
+                                    FontSize="12"
+                                    IsReadOnly="True"
+                                    Text="세이브 코드를 선택하면 여기에 표시됩니다..."
+                                    Foreground="Gray"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    TextWrapping="Wrap"/>
+                        </ScrollViewer>
+                    </GroupBox>
+                </Grid>
+            </GroupBox>
+            
+        </Grid>
+        
+        <!-- Status Bar -->
+        <StatusBar Grid.Row="1" Background="#f8f9fa">
+            <StatusBarItem Content="준비됨"/>
+            <StatusBarItem Name="StatusBarProgress" Visibility="Collapsed">
+                <ProgressBar Width="120" Height="16" IsIndeterminate="True"/>
+            </StatusBarItem>
+            <StatusBarItem Name="StatusBarMessage" Content="폴더를 선택하고 파일을 분석해주세요"/>
+        </StatusBar>
+        
+    </Grid>
+</Window>
