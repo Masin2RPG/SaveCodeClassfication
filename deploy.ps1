@@ -117,6 +117,14 @@ if (Test-Path "mainIcon.ico") {
     Copy-Item "mainIcon.ico" $ReleaseDir
 }
 
+# charName.json 파일 복사
+if (Test-Path "charName.json") {
+    Copy-Item "charName.json" $ReleaseDir
+    Write-Host "   charName.json 파일 복사 완료" -ForegroundColor Green
+} else {
+    Write-Host "   charName.json 파일이 없습니다. 원본 캐릭터명이 사용됩니다." -ForegroundColor Yellow
+}
+
 # 라이선스 파일 생성
 @"
 Copyright (C) 2024 Masin. All rights reserved.
@@ -138,14 +146,25 @@ $deployInfo = @"
 3. '파일 분석' 버튼 클릭
 4. 캐릭터 선택 후 세이브 코드 복사
 
+새로운 기능:
+- ?? 캐릭터명 실시간 검색 기능
+- ?? 캐릭터명 자동 매핑 (charName.json 기반)
+- ?? 마신명으로 캐릭터 표시 (매핑 파일 있을 때)
+
 시스템 요구사항:
 - Windows 10/11 (64-bit)
 - 최소 512MB RAM
 - 100MB 이상 여유 저장공간
 
-아이콘 정보:
-- 윈도우 아이콘: mainIcon.png (WPF 윈도우용)
-- 실행 파일 아이콘: mainIcon.ico (익스플로러 표시용)
+파일 설명:
+- $AppName.exe: 메인 실행 파일
+- charName.json: 캐릭터명 매핑 파일 (마신명 표시용)
+- mainIcon.png/ico: 프로그램 아이콘
+- README.md: 상세 사용법
+
+캐릭터명 매핑:
+charName.json 파일이 있으면 '이름' 값과 일치하는 캐릭터를 '마신' 값으로 표시합니다.
+파일이 없거나 매핑되지 않은 캐릭터는 원본 이름으로 표시됩니다.
 "@
 
 $deployInfo | Out-File "$ReleaseDir\배포정보.txt" -Encoding UTF8

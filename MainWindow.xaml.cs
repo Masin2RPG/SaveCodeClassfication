@@ -27,6 +27,7 @@ namespace SaveCodeClassfication
         private readonly ObservableCollection<CharacterInfo> _filteredCharacters = new();
         private readonly ObservableCollection<SaveCodeInfo> _currentSaveCodes = new();
         private string _currentSearchText = string.Empty;
+        private Dictionary<string, string> _characterNameMappings = new();
         
         // 설정 파일 경로
         private static readonly string ConfigFilePath = Path.Combine(
@@ -41,6 +42,12 @@ namespace SaveCodeClassfication
             "SaveCodeClassification",
             "analysis_cache.json"
         );
+        
+        // 캐릭터 이름 매핑 파일 경로
+        private static readonly string CharNameMappingPath = Path.Combine(
+            AppDomain.CurrentDomain.BaseDirectory,
+            "charName.json"
+        );
 
         public MainWindow()
         {
@@ -53,9 +60,134 @@ namespace SaveCodeClassfication
             {
                 await Dispatcher.InvokeAsync(async () =>
                 {
+                    await LoadCharacterNameMappingsAsync();
                     await LoadSettingsAndInitializeAsync();
                 });
             });
+        }
+
+        private async Task LoadCharacterNameMappingsAsync()
+        {
+            try
+            {
+                if (!File.Exists(CharNameMappingPath))
+                {
+                    UpdateStatus("charName.json 파일이 없습니다. 원래 캐릭터명을 사용합니다.");
+                    return;
+                }
+
+                var jsonString = await File.ReadAllTextAsync(CharNameMappingPath, Encoding.UTF8);
+                
+                // 먼저 기존 형식(string 이름)으로 시도
+                try
+                {
+                    var oldMappings = JsonSerializer.Deserialize<List<Dictionary<string, object>>>(jsonString);
+                    _characterNameMappings.Clear();
+                    
+                    if (oldMappings != null)
+                    {
+                        foreach (var mapping in oldMappings)
+                        {
+                            if (mapping.TryGetValue("마신", out var masinObj) && 
+                                mapping.TryGetValue("이름", out var nameObj))
+                            {
+                                var masin = masinObj?.ToString();
+                                if (string.IsNullOrEmpty(masin)) continue;
+
+                                // 이름이 JsonElement인 경우 (리스트일 수 있음)
+                                if (nameObj is JsonElement nameElement)
+                                {
+                                    if (nameElement.ValueKind == JsonValueKind.Array)
+                                    {
+                                        // 배열 형태인 경우
+                                        foreach (var item in nameElement.EnumerateArray())
+                                        {
+                                            var name = item.GetString();
+                                            if (!string.IsNullOrEmpty(name))
+                                            {
+                                                _characterNameMappings[name] = masin;
+                                            }
+                                        }
+                                    }
+                                    else if (nameElement.ValueKind == JsonValueKind.String)
+                                    {
+                                        // 문자열 형태인 경우 (쉼표로 구분될 수 있음)
+                                        var nameStr = nameElement.GetString();
+                                        if (!string.IsNullOrEmpty(nameStr))
+                                        {
+                                            if (nameStr.Contains(','))
+                                            {
+                                                // 쉼표로 구분된 여러 이름
+                                                var names = nameStr.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                                                foreach (var name in names)
+                                                {
+                                                    var trimmedName = name.Trim();
+                                                    if (!string.IsNullOrEmpty(trimmedName))
+                                                    {
+                                                        _characterNameMappings[trimmedName] = masin;
+                                                    }
+                                                }
+                                            }
+                                            else
+                                            {
+                                                // 단일 이름
+                                                _characterNameMappings[nameStr] = masin;
+                                            }
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    // 직접 문자열인 경우
+                                    var nameStr = nameObj?.ToString();
+                                    if (!string.IsNullOrEmpty(nameStr))
+                                    {
+                                        if (nameStr.Contains(','))
+                                        {
+                                            // 쉼표로 구분된 여러 이름
+                                            var names = nameStr.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                                            foreach (var name in names)
+                                            {
+                                                var trimmedName = name.Trim();
+                                                if (!string.IsNullOrEmpty(trimmedName))
+                                                {
+                                                    _characterNameMappings[trimmedName] = masin;
+                                                }
+                                            }
+                                        }
+                                        else
+                                        {
+                                            // 단일 이름
+                                            _characterNameMappings[nameStr] = masin;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    UpdateStatus($"캐릭터 이름 매핑 로드 완료: {_characterNameMappings.Count}개 매핑");
+                }
+                catch (Exception ex)
+                {
+                    UpdateStatus($"캐릭터 이름 매핑 로드 실패: {ex.Message}");
+                    _characterNameMappings.Clear();
+                }
+            }
+            catch (Exception ex)
+            {
+                UpdateStatus($"캐릭터 이름 매핑 파일 읽기 실패: {ex.Message}");
+                _characterNameMappings.Clear();
+            }
+        }
+
+        private string GetDisplayCharacterName(string originalName)
+        {
+            if (_characterNameMappings.TryGetValue(originalName, out var mappedName))
+            {
+                return mappedName;
+            }
+            return originalName;
         }
 
         private async Task LoadSettingsAndInitializeAsync()
@@ -281,9 +413,11 @@ namespace SaveCodeClassfication
                 // Create character info objects
                 foreach (var kvp in characterDict.OrderBy(x => x.Key))
                 {
+                    var displayName = GetDisplayCharacterName(kvp.Key);
                     var characterInfo = new CharacterInfo
                     {
-                        CharacterName = kvp.Key,
+                        CharacterName = displayName,
+                        OriginalCharacterName = kvp.Key, // 원본 캐릭터명 저장
                         SaveCodes = new ObservableCollection<SaveCodeInfo>(kvp.Value.OrderByDescending(x => x.FileDate)),
                         SaveCodeCount = $"세이브 코드: {kvp.Value.Count}개",
                         LastModified = kvp.Value.Max(x => x.FileDate).ToString("yyyy-MM-dd HH:mm")
@@ -470,9 +604,11 @@ namespace SaveCodeClassfication
                 // 캐릭터 정보 객체 생성
                 foreach (var kvp in characterDict.OrderBy(x => x.Key))
                 {
+                    var displayName = GetDisplayCharacterName(kvp.Key);
                     var characterInfo = new CharacterInfo
                     {
-                        CharacterName = kvp.Key,
+                        CharacterName = displayName,
+                        OriginalCharacterName = kvp.Key, // 원본 캐릭터명 저장
                         SaveCodes = new ObservableCollection<SaveCodeInfo>(kvp.Value.OrderByDescending(x => x.FileDate)),
                         SaveCodeCount = $"세이브 코드: {kvp.Value.Count}개",
                         LastModified = kvp.Value.Max(x => x.FileDate).ToString("yyyy-MM-dd HH:mm")
@@ -484,7 +620,7 @@ namespace SaveCodeClassfication
                 FilterCharacters();
                 UpdateCharacterCountDisplay();
                 
-                await Task.CompletedTask; // async 메소드를 위한 형식적 대기
+                await Task.CompletedTask; // async 메so드를 위한 형식적 대기
             }
             catch (Exception ex)
             {
@@ -729,9 +865,10 @@ namespace SaveCodeClassfication
             }
             else
             {
-                // 검색어로 필터링
+                // 검색어로 필터링 (표시명과 원본명 모두 검색)
                 var filteredList = _characters.Where(c => 
-                    c.CharacterName.Contains(_currentSearchText, StringComparison.OrdinalIgnoreCase))
+                    c.CharacterName.Contains(_currentSearchText, StringComparison.OrdinalIgnoreCase) ||
+                    c.OriginalCharacterName.Contains(_currentSearchText, StringComparison.OrdinalIgnoreCase))
                     .ToList();
 
                 foreach (var character in filteredList)
@@ -874,7 +1011,8 @@ namespace SaveCodeClassfication
                     
                     if (success)
                     {
-                        WpfMessageBox.Show($"'{selectedCode.CharacterName}'의 세이브 코드가 클립보드에 복사되었습니다!", "복사 완료", 
+                        var displayName = GetDisplayCharacterName(selectedCode.CharacterName);
+                        WpfMessageBox.Show($"'{displayName}'의 세이브 코드가 클립보드에 복사되었습니다!", "복사 완료", 
                                           MessageBoxButton.OK, MessageBoxImage.Information);
                         UpdateStatus($"세이브 코드 복사 완료: {selectedCode.FileName}");
                     }
@@ -966,9 +1104,10 @@ namespace SaveCodeClassfication
 
         private void ShowCodeWindow(SaveCodeInfo saveCode)
         {
+            var displayName = GetDisplayCharacterName(saveCode.CharacterName);
             var codeWindow = new Window
             {
-                Title = $"세이브 코드 상세 정보 - {saveCode.CharacterName}",
+                Title = $"세이브 코드 상세 정보 - {displayName}",
                 Width = 800,
                 Height = 600,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -991,7 +1130,7 @@ namespace SaveCodeClassfication
 
             var basicInfo = new System.Windows.Controls.TextBlock
             {
-                Text = $"캐릭터: {saveCode.CharacterName} | 레벨: {saveCode.Level} | 경험치: {saveCode.Experience}",
+                Text = $"캐릭터: {displayName} | 레벨: {saveCode.Level} | 경험치: {saveCode.Experience}",
                 FontWeight = FontWeights.Bold,
                 FontSize = 14,
                 Padding = new Thickness(10),
@@ -1139,6 +1278,9 @@ namespace SaveCodeClassfication
                 if (string.IsNullOrEmpty(characterName))
                     return null;
 
+                // 캐릭터 이름 매핑 적용
+                characterName = GetDisplayCharacterName(characterName);
+
                 // Extract save code using improved regex for call Preload() format
                 var codeMatch = Regex.Match(content, @"call\s+Preload\(\s*[""']Code:\s*([A-Z0-9\-\s]+?)[""']\s*\)", RegexOptions.IgnoreCase);
                 if (!codeMatch.Success)
@@ -1265,6 +1407,7 @@ namespace SaveCodeClassfication
     public class CharacterInfo : INotifyPropertyChanged
     {
         public string CharacterName { get; set; } = string.Empty;
+        public string OriginalCharacterName { get; set; } = string.Empty;
         public ObservableCollection<SaveCodeInfo> SaveCodes { get; set; } = new();
         public string SaveCodeCount { get; set; } = string.Empty;
         public string LastModified { get; set; } = string.Empty;
@@ -1295,5 +1438,11 @@ namespace SaveCodeClassfication
         public string Experience { get; set; } = string.Empty;    // 경험치
 
         public event PropertyChangedEventHandler? PropertyChanged;
+    }
+
+    public class CharacterNameMapping
+    {
+        public List<string>? 이름 { get; set; }
+        public string? 마신 { get; set; }
     }
 }

@@ -77,6 +77,14 @@ if exist "mainIcon.ico" (
     copy "mainIcon.ico" "%RELEASE_DIR%\\"
 )
 
+:: charName.json 파일 복사
+if exist "charName.json" (
+    copy "charName.json" "%RELEASE_DIR%\\"
+    echo    charName.json 파일 복사 완료
+) else (
+    echo    charName.json 파일이 없습니다. 원본 캐릭터명이 사용됩니다.
+)
+
 :: 라이선스 파일 생성
 echo Copyright (C) 2024 Masin. All rights reserved. > "%RELEASE_DIR%\LICENSE.txt"
 echo. >> "%RELEASE_DIR%\LICENSE.txt"
