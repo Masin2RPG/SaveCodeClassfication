@@ -24,7 +24,9 @@ namespace SaveCodeClassfication
         private string? _selectedFolderPath;
         private readonly ObservableCollection<TxtFileInfo> _txtFiles = new();
         private readonly ObservableCollection<CharacterInfo> _characters = new();
+        private readonly ObservableCollection<CharacterInfo> _filteredCharacters = new();
         private readonly ObservableCollection<SaveCodeInfo> _currentSaveCodes = new();
+        private string _currentSearchText = string.Empty;
         
         // 설정 파일 경로
         private static readonly string ConfigFilePath = Path.Combine(
@@ -43,7 +45,7 @@ namespace SaveCodeClassfication
         public MainWindow()
         {
             InitializeComponent();
-            LstCharacters.ItemsSource = _characters;
+            LstCharacters.ItemsSource = _filteredCharacters;
             LstSaveCodes.ItemsSource = _currentSaveCodes;
             
             // 앱 시작 시 설정 로드 및 자동 폴더 로드
@@ -289,7 +291,10 @@ namespace SaveCodeClassfication
                     _characters.Add(characterInfo);
                 }
 
-                TxtCharacterCount.Text = $"분석된 캐릭터: {_characters.Count}개";
+                // 검색 필터 적용
+                FilterCharacters();
+                UpdateCharacterCountDisplay();
+
                 UpdateStatus($"분석 완료: {validFiles}개의 유효한 세이브 코드 파일에서 {_characters.Count}개의 캐릭터를 찾았습니다");
 
                 // 분석 결과를 캐시에 저장
@@ -475,7 +480,10 @@ namespace SaveCodeClassfication
                     _characters.Add(characterInfo);
                 }
 
-                TxtCharacterCount.Text = $"분석된 캐릭터: {_characters.Count}개";
+                // 검색 필터 적용
+                FilterCharacters();
+                UpdateCharacterCountDisplay();
+                
                 await Task.CompletedTask; // async 메소드를 위한 형식적 대기
             }
             catch (Exception ex)
@@ -643,6 +651,7 @@ namespace SaveCodeClassfication
             
             _txtFiles.Clear();
             _characters.Clear();
+            _filteredCharacters.Clear();
             _currentSaveCodes.Clear();
             BtnAnalyzeFiles.IsEnabled = false;
             
@@ -653,7 +662,10 @@ namespace SaveCodeClassfication
         private void ClearDisplay()
         {
             ClearCharacterSelection();
-            TxtCharacterCount.Text = "분석된 캐릭터: 0개";
+            _currentSearchText = string.Empty;
+            TxtCharacterSearch.Text = string.Empty;
+            SearchResultPanel.Visibility = Visibility.Collapsed;
+            UpdateCharacterCountDisplay();
         }
 
         private void ClearCharacterSelection()
@@ -680,6 +692,95 @@ namespace SaveCodeClassfication
             }
             
             return $"{len:0.##} {sizes[order]}";
+        }
+
+        private void TxtCharacterSearch_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (sender is System.Windows.Controls.TextBox searchBox)
+            {
+                _currentSearchText = searchBox.Text.Trim();
+                FilterCharacters();
+            }
+        }
+
+        private void BtnClearSearch_Click(object sender, RoutedEventArgs e)
+        {
+            TxtCharacterSearch.Text = string.Empty;
+            _currentSearchText = string.Empty;
+            FilterCharacters();
+            TxtCharacterSearch.Focus();
+        }
+
+        private void FilterCharacters()
+        {
+            _filteredCharacters.Clear();
+
+            if (string.IsNullOrEmpty(_currentSearchText))
+            {
+                // 검색어가 없으면 모든 캐릭터 표시
+                foreach (var character in _characters)
+                {
+                    _filteredCharacters.Add(character);
+                }
+                
+                // 검색 결과 패널 숨기기
+                SearchResultPanel.Visibility = Visibility.Collapsed;
+                UpdateCharacterCountDisplay();
+            }
+            else
+            {
+                // 검색어로 필터링
+                var filteredList = _characters.Where(c => 
+                    c.CharacterName.Contains(_currentSearchText, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                foreach (var character in filteredList)
+                {
+                    _filteredCharacters.Add(character);
+                }
+
+                // 검색 결과 표시
+                ShowSearchResult(filteredList.Count);
+            }
+
+            // 선택 초기화
+            LstCharacters.SelectedItem = null;
+            ClearCharacterSelection();
+            
+            UpdateStatus($"캐릭터 검색: '{_currentSearchText}' - {_filteredCharacters.Count}개 결과");
+        }
+
+        private void ShowSearchResult(int resultCount)
+        {
+            SearchResultPanel.Visibility = Visibility.Visible;
+            
+            if (resultCount == 0)
+            {
+                TxtSearchResult.Text = "검색 결과 없음";
+                TxtSearchResult.Foreground = MediaBrushes.Orange;
+                TxtSearchCount.Text = $"'{_currentSearchText}'에 해당하는 캐릭터가 없습니다";
+            }
+            else
+            {
+                TxtSearchResult.Text = "검색 결과";
+                TxtSearchResult.Foreground = MediaBrushes.DodgerBlue;
+                TxtSearchCount.Text = $"'{_currentSearchText}' - {resultCount}개 캐릭터 발견";
+            }
+        }
+
+        private void UpdateCharacterCountDisplay()
+        {
+            var totalCount = _characters.Count;
+            var displayedCount = _filteredCharacters.Count;
+            
+            if (string.IsNullOrEmpty(_currentSearchText))
+            {
+                TxtCharacterCount.Text = $"분석된 캐릭터: {totalCount}개";
+            }
+            else
+            {
+                TxtCharacterCount.Text = $"표시된 캐릭터: {displayedCount}개 / 전체: {totalCount}개";
+            }
         }
 
         private async void BtnReloadFolder_Click(object sender, RoutedEventArgs e)

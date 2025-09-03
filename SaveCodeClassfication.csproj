@@ -16,6 +16,9 @@
     <PublishTrimmed>false</PublishTrimmed>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     
+    <!-- 애플리케이션 아이콘 설정 (실행 파일 아이콘) -->
+    <ApplicationIcon>mainIcon.ico</ApplicationIcon>
+    
     <!-- 애플리케이션 매니페스트 정보 -->
     <AssemblyTitle>Masin 세이브코드 분류</AssemblyTitle>
     <AssemblyDescription>Masin 세이브코드 분류 및 관리 도구</AssemblyDescription>
@@ -41,9 +44,14 @@
     <PackageReference Include="TextCopy" Version="6.2.1" />
   </ItemGroup>
 
-  <!-- mainIcon.png를 리소스로 포함 -->
+  <!-- mainIcon.png를 리소스로 포함 (윈도우 아이콘용) -->
   <ItemGroup>
     <Resource Include="mainIcon.png" />
+  </ItemGroup>
+
+  <!-- mainIcon.ico 파일이 있을 때 포함 (실행 파일 아이콘용) -->
+  <ItemGroup Condition="Exists('mainIcon.ico')">
+    <Content Include="mainIcon.ico" />
   </ItemGroup>
 
 </Project>
