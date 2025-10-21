@@ -1,0 +1,54 @@
+﻿<Window x:Class="SaveCodeClassfication.Views.RegisterWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Masin 세이브코드 분류 - 회원가입" Height="620" Width="450"
+        WindowStartupLocation="CenterScreen" ResizeMode="NoResize">
+    <Grid Background="#f5f5f5">
+        <Border Background="White" Margin="20" CornerRadius="8" BorderBrush="#e0e0e0" BorderThickness="1">
+            <StackPanel Margin="30" VerticalAlignment="Center">
+                <!-- Header -->
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,20">
+                    <TextBlock Text="📝" FontSize="20" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <TextBlock Text="Masin 세이브코드 분류" FontSize="16" FontWeight="Bold" VerticalAlignment="Center" Foreground="#333"/>
+                </StackPanel>
+                
+                <TextBlock Text="회원가입" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,0,0,25" Foreground="#4CAF50"/>
+                
+                <!-- Register Form -->
+                <StackPanel>
+                    <TextBlock Text="아이디" FontWeight="Bold" Margin="0,0,0,5" Foreground="#555" FontSize="12"/>
+                    <TextBox Name="TxtUserId" Height="38" Padding="12,8" FontSize="14" Margin="0,0,0,15" 
+                             BorderBrush="#ddd" BorderThickness="1" Background="White" TextChanged="TxtUserId_TextChanged"/>
+                    
+                    <TextBlock Text="비밀번호" FontWeight="Bold" Margin="0,0,0,5" Foreground="#555" FontSize="12"/>
+                    <PasswordBox Name="TxtPassword" Height="38" Padding="12,8" FontSize="14" Margin="0,0,0,15" 
+                                BorderBrush="#ddd" BorderThickness="1" Background="White" PasswordChanged="TxtPassword_PasswordChanged"/>
+                    
+                    <TextBlock Text="비밀번호 확인" FontWeight="Bold" Margin="0,0,0,5" Foreground="#555" FontSize="12"/>
+                    <PasswordBox Name="TxtConfirmPassword" Height="38" Padding="12,8" FontSize="14" Margin="0,0,0,15" 
+                                BorderBrush="#ddd" BorderThickness="1" Background="White" PasswordChanged="TxtConfirmPassword_PasswordChanged"/>
+                    
+                    <TextBlock Text="인증키" FontWeight="Bold" Margin="0,0,0,5" Foreground="#555" FontSize="12"/>
+                    <TextBox Name="TxtAuthKey" Height="38" Padding="12,8" FontSize="14" Margin="0,0,0,5" 
+                             BorderBrush="#ddd" BorderThickness="1" Background="White" TextChanged="TxtAuthKey_TextChanged"/>
+                    <TextBlock Text="※ 관리자로부터 받은 인증키를 입력해주세요" FontSize="11" Foreground="#ff9800" Margin="0,0,0,20"/>
+                    
+                    <Button Name="BtnRegister" Content="회원가입" Height="42" FontSize="16" FontWeight="Bold"
+                           Background="#4CAF50" Foreground="White" BorderThickness="0" Margin="0,0,0,15"
+                           Click="BtnRegister_Click" IsEnabled="False"/>
+                    
+                    <Button Name="BtnCancel" Content="취소" Height="38" FontSize="14" Background="Transparent" 
+                           Foreground="#666" BorderBrush="#ddd" BorderThickness="1" Click="BtnCancel_Click" Margin="0,0,0,20"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+        
+        <!-- Loading Indicator -->
+        <Border Name="LoadingPanel" Background="#80000000" Visibility="Collapsed">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                <ProgressBar IsIndeterminate="True" Width="100" Height="10" Margin="0,0,0,10"/>
+                <TextBlock Name="LoadingText" Text="회원가입 처리 중..." FontSize="14" Foreground="White" HorizontalAlignment="Center"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

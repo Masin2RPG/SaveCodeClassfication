@@ -1,0 +1,253 @@
+﻿<UserControl x:Class="SaveCodeClassfication.Views.TokenGeneratorView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:local="clr-namespace:SaveCodeClassfication.Views"
+             xmlns:sys="clr-namespace:System;assembly=mscorlib"
+             mc:Ignorable="d" 
+             d:DesignHeight="800" d:DesignWidth="1000">
+    <Grid Margin="20">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="400"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Left Panel - Token Generator -->
+        <StackPanel Grid.Column="0" Margin="0,0,20,0">
+            <!-- Header -->
+            <Border Background="#f0f8ff" CornerRadius="8" Padding="20" Margin="0,0,0,20">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="🔑" FontSize="24" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                    <StackPanel>
+                        <TextBlock Text="인증 토큰 생성기" FontSize="18" FontWeight="Bold"/>
+                        <TextBlock Text="사용 가능한 날짜를 설정하여 새로운 인증 토큰을 생성합니다" FontSize="12" Foreground="Gray"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Token Settings -->
+            <GroupBox Header="토큰 설정" Margin="0,0,0,20" Padding="15">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="120"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Effective Date -->
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="사용 가능 날짜:" 
+                              VerticalAlignment="Center" FontWeight="Bold" Margin="0,0,10,0"/>
+                    <DatePicker Grid.Row="0" Grid.Column="1" Name="DatePickerEffective" 
+                               SelectedDate="{x:Static sys:DateTime.Today}"
+                               Margin="0,0,0,10" Height="30"/>
+
+                    <!-- Token Length -->
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="토큰 길이:" 
+                              VerticalAlignment="Center" FontWeight="Bold" Margin="0,0,10,0"/>
+                    <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,0,0,10">
+                        <StackPanel Orientation="Horizontal">
+                            <Slider Name="SliderTokenLength" Minimum="8" Maximum="32" Value="16" 
+                                   Width="150" VerticalAlignment="Center" TickFrequency="4" IsSnapToTickEnabled="True"/>
+                            <TextBlock Name="TxtTokenLength" Text="16자" FontWeight="Bold" 
+                                      VerticalAlignment="Center" Margin="10,0,0,0" MinWidth="40"/>
+                        </StackPanel>
+                        <TextBlock Text="8-32자 사이 선택 가능" FontSize="10" Foreground="Gray"/>
+                    </StackPanel>
+
+                    <!-- Token Preview -->
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="토큰 미리보기:" 
+                              VerticalAlignment="Top" FontWeight="Bold" Margin="0,5,10,0"/>
+                    <StackPanel Grid.Row="2" Grid.Column="1">
+                        <Border Background="#f8f9fa" CornerRadius="4" Padding="10">
+                            <DockPanel>
+                                <Button Name="BtnRefreshToken" Content="새로고침" 
+                                       Background="#28a745" Foreground="White"
+                                       Click="BtnRefreshToken_Click"
+                                       Width="60" Height="25" DockPanel.Dock="Right"
+                                       Margin="10,0,0,0" ToolTip="새 토큰 생성"/>
+                                <TextBox Name="TxtPreviewToken" IsReadOnly="True" 
+                                        FontFamily="Consolas" FontSize="12" FontWeight="Bold"
+                                        Background="Transparent" BorderThickness="0"
+                                        VerticalAlignment="Center" Text="ABCD1234EFGH5678"/>
+                            </DockPanel>
+                        </Border>
+                    </StackPanel>
+                </Grid>
+            </GroupBox>
+
+            <!-- Generate Buttons -->
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,20">
+                <Button Name="BtnGenerateToken" Content="토큰 생성" 
+                       Background="#007bff" Foreground="White"
+                       Click="BtnGenerateToken_Click"
+                       Height="40" MinWidth="120" Padding="15,8"
+                       FontSize="14" FontWeight="Bold" Margin="0,0,10,0"/>
+                <Button Name="BtnCopyToken" Content="토큰 복사" 
+                       Background="#6c757d" Foreground="White"
+                       Click="BtnCopyToken_Click"
+                       Height="40" MinWidth="100" Padding="15,8"
+                       FontSize="14" IsEnabled="False" Margin="10,0,0,0"/>
+            </StackPanel>
+
+            <!-- Success Panel -->
+            <Border Name="ResultPanel" Background="#d1edff" CornerRadius="5" 
+                   Padding="15" Margin="0,0,0,20" Visibility="Collapsed">
+                <StackPanel>
+                    <DockPanel Margin="0,0,0,10">
+                        <TextBlock Text="✅" FontSize="16" DockPanel.Dock="Left" Margin="0,0,10,0"/>
+                        <TextBlock Text="토큰이 성공적으로 생성되었습니다!" FontWeight="Bold" FontSize="14"/>
+                    </DockPanel>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="80"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="생성된 토큰:" FontWeight="Bold" Margin="0,0,10,5"/>
+                        <TextBox Grid.Row="0" Grid.Column="1" Name="TxtGeneratedToken" IsReadOnly="True" 
+                                FontFamily="Consolas" FontSize="11" FontWeight="Bold"
+                                Background="White" Padding="8,4" Margin="0,0,0,5"/>
+                        
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="사용 가능일:" FontWeight="Bold" Margin="0,0,10,5"/>
+                        <TextBlock Grid.Row="1" Grid.Column="1" Name="TxtEffectiveDate" 
+                                  FontSize="11" Margin="0,0,0,5"/>
+                        
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="생성 시간:" FontWeight="Bold" Margin="0,0,10,0"/>
+                        <TextBlock Grid.Row="2" Grid.Column="1" Name="TxtCreationTime" 
+                                  FontSize="11"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- Error Panel -->
+            <Border Name="ErrorPanel" Background="#f8d7da" CornerRadius="5" 
+                   Padding="15" Margin="0,0,0,20" Visibility="Collapsed">
+                <DockPanel>
+                    <TextBlock Text="❌" FontSize="16" DockPanel.Dock="Left" Margin="0,0,10,0"/>
+                    <StackPanel>
+                        <TextBlock Text="토큰 생성 실패" FontWeight="Bold" FontSize="14" Foreground="#721c24"/>
+                        <TextBlock Name="TxtErrorMessage" FontSize="12" Foreground="#721c24" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+        </StackPanel>
+
+        <!-- Right Panel - Token List -->
+        <GroupBox Grid.Column="1" Header="토큰 목록 관리" Padding="15">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- Refresh Button -->
+                <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,10">
+                    <Button Name="BtnRefreshTokenList" Content="목록 새로고침" 
+                           Background="#17a2b8" Foreground="White"
+                           Click="BtnRefreshTokenList_Click"
+                           Height="30" Padding="15,5" FontSize="12"/>
+                </StackPanel>
+
+                <!-- Token List -->
+                <DataGrid Grid.Row="1" Name="DataGridTokens" 
+                         AutoGenerateColumns="False"
+                         CanUserAddRows="False"
+                         CanUserDeleteRows="False"
+                         SelectionMode="Single"
+                         GridLinesVisibility="Horizontal"
+                         HeadersVisibility="Column"
+                         RowHeaderWidth="0"
+                         FontSize="12">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="토큰" Binding="{Binding Auth_tokens}" 
+                                           Width="180" IsReadOnly="True">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="FontFamily" Value="Consolas"/>
+                                    <Setter Property="FontWeight" Value="Bold"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        
+                        <DataGridTextColumn Header="유효날짜" Binding="{Binding Effective_Date, StringFormat=yyyy-MM-dd}" 
+                                           Width="100" IsReadOnly="True"/>
+                        
+                        <DataGridTextColumn Header="사용여부" Binding="{Binding Use_Yn}" 
+                                           Width="80" IsReadOnly="True">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Use_Yn}" Value="N">
+                                            <Setter Property="Foreground" Value="Green"/>
+                                            <Setter Property="FontWeight" Value="Bold"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Use_Yn}" Value="Y">
+                                            <Setter Property="Foreground" Value="Red"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        
+                        <DataGridTextColumn Header="상태" Binding="{Binding StatusText}" 
+                                           Width="80" IsReadOnly="True">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding StatusText}" Value="사용가능">
+                                            <Setter Property="Foreground" Value="Green"/>
+                                            <Setter Property="FontWeight" Value="Bold"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding StatusText}" Value="사용됨">
+                                            <Setter Property="Foreground" Value="Red"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding StatusText}" Value="만료됨">
+                                            <Setter Property="Foreground" Value="Gray"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+
+                        <DataGridTemplateColumn Header="작업" Width="140">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                        <Button Content="수정" Click="BtnEditToken_Click" 
+                                               Background="#ffc107" Foreground="Black"
+                                               Width="50" Height="30" Margin="3" FontSize="11"
+                                               FontWeight="Bold"
+                                               Tag="{Binding}"
+                                               ToolTip="토큰 유효날짜 수정"/>
+                                        <Button Content="삭제" Click="BtnDeleteToken_Click" 
+                                               Background="#dc3545" Foreground="White"
+                                               Width="50" Height="30" Margin="3" FontSize="11"
+                                               FontWeight="Bold"
+                                               Tag="{Binding}"
+                                               ToolTip="토큰 삭제"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+
+                <!-- Status Bar -->
+                <Border Grid.Row="2" Background="#f8f9fa" Padding="10,5" Margin="0,10,0,0">
+                    <TextBlock Name="TxtTokenCount" Text="토큰 개수: 0" FontSize="11" Foreground="Gray"/>
+                </Border>
+            </Grid>
+        </GroupBox>
+    </Grid>
+</UserControl>

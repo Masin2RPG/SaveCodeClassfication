@@ -12,11 +12,23 @@ namespace SaveCodeClassfication.Models
     }
 
     /// <summary>
+    /// 뷰 모드 종류
+    /// </summary>
+    public enum ViewMode
+    {
+        /// <summary>캐릭터별 보기</summary>
+        ByCharacter,
+        /// <summary>직업별 그룹화 보기</summary>
+        ByJobGroup
+    }
+
+    /// <summary>
     /// 간단한 날짜 정렬 설정
     /// </summary>
     public class SimpleSortSettings
     {
         public DateSortDirection Direction { get; set; } = DateSortDirection.Newest;
+        public ViewMode ViewMode { get; set; } = ViewMode.ByCharacter;
         
         /// <summary>
         /// 정렬 설정의 표시명을 반환합니다
@@ -32,11 +44,32 @@ namespace SaveCodeClassfication.Models
         }
 
         /// <summary>
+        /// 뷰 모드의 표시명을 반환합니다
+        /// </summary>
+        public string GetViewModeDisplayName()
+        {
+            return ViewMode switch
+            {
+                ViewMode.ByCharacter => "캐릭터별",
+                ViewMode.ByJobGroup => "직업별 그룹",
+                _ => "캐릭터별"
+            };
+        }
+
+        /// <summary>
         /// 정렬 방향을 토글합니다
         /// </summary>
         public void ToggleDirection()
         {
             Direction = Direction == DateSortDirection.Newest ? DateSortDirection.Oldest : DateSortDirection.Newest;
+        }
+
+        /// <summary>
+        /// 뷰 모드를 토글합니다
+        /// </summary>
+        public void ToggleViewMode()
+        {
+            ViewMode = ViewMode == ViewMode.ByCharacter ? ViewMode.ByJobGroup : ViewMode.ByCharacter;
         }
     }
 
@@ -79,7 +112,7 @@ namespace SaveCodeClassfication.Models
                 _ => "날짜"
             };
 
-            var directionIcon = Direction == SortDirection.Ascending ? "??" : "??";
+            var directionIcon = Direction == SortDirection.Ascending ? "▲" : "▼";
             var directionName = Direction == SortDirection.Ascending ? "오름차순" : "내림차순";
             
             return $"{directionIcon} {criteriaName} {directionName}";

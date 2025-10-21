@@ -1,8 +1,10 @@
 ﻿using System.Collections.ObjectModel;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using SaveCodeClassfication.Models;
 using SaveCodeClassfication.Services;
 using SaveCodeClassfication.Utils;
@@ -30,34 +32,103 @@ namespace SaveCodeClassfication
 
         // Services
         private readonly SettingsService _settingsService;
-        private readonly CacheService _cacheService;
         private readonly CharacterNameMappingService _nameMappingService;
         private readonly SaveCodeParserService _parserService;
+        private DatabaseService _databaseService;
+        private CacheService _cacheService;
+        private UserService _userService; // 토큰 생성을 위한 UserService 추가
+
+        // 로그인 사용자 정보
+        public string LoggedInUserId { get; set; } = string.Empty;
+        public bool IsAdminUser { get; set; } = false;
         #endregion
 
         #region Constructor
         public MainWindow()
         {
-            InitializeComponent();
-            
-            // Services 초기화
-            _settingsService = new SettingsService(PathConstants.ConfigFilePath);
-            _cacheService = new CacheService(PathConstants.CacheFilePath);
-            _nameMappingService = new CharacterNameMappingService(PathConstants.CharNameMappingPath);
-            _parserService = new SaveCodeParserService(_nameMappingService);
-            
-            // UI 초기화
-            LstCharacters.ItemsSource = _filteredCharacters;
-            LstSaveCodes.ItemsSource = _currentSaveCodes;
-            
-            // 비동기 초기화
-            _ = Task.Run(async () =>
+            try
             {
-                await Dispatcher.InvokeAsync(async () =>
+                System.Diagnostics.Debug.WriteLine("=== MainWindow 생성자 시작 ===");
+                
+                InitializeComponent();
+                System.Diagnostics.Debug.WriteLine("InitializeComponent 완료");
+                
+                // 기본 서비스만 초기화
+                System.Diagnostics.Debug.WriteLine("기본 Services 초기화 중...");
+                _settingsService = new SettingsService(PathConstants.ConfigFilePath);
+                
+                // 기본 데이터베이스 서비스 초기화
+                var defaultDbSettings = new DatabaseSettings();
+                _databaseService = new DatabaseService(defaultDbSettings);
+                _cacheService = new CacheService(_databaseService, _settingsService);
+                _userService = new UserService(defaultDbSettings.GetConnectionString());
+                _nameMappingService = new CharacterNameMappingService(PathConstants.CharNameMappingPath);
+                _parserService = new SaveCodeParserService(_nameMappingService);
+                System.Diagnostics.Debug.WriteLine("기본 Services 초기화 완료");
+                
+                // UI 기본 설정
+                System.Diagnostics.Debug.WriteLine("UI 기본 설정 중...");
+                LstCharacters.ItemsSource = _filteredCharacters;
+                LstSaveCodes.ItemsSource = _currentSaveCodes;
+                System.Diagnostics.Debug.WriteLine("UI 기본 설정 완료");
+                
+                System.Diagnostics.Debug.WriteLine("=== MainWindow 생성자 완료 ===");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"=== MainWindow 생성자 오류 ===");
+                System.Diagnostics.Debug.WriteLine($"오류 타입: {ex.GetType().Name}");
+                System.Diagnostics.Debug.WriteLine($"오류 메시지: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"스택 트레이스: {ex.StackTrace}");
+                
+                // 생성자 실패 시 예외를 다시 던져서 App.xaml.cs에서 처리
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// 메인창 초기화를 App.xaml.cs에서 호출할 수 있도록 public 메서드로 제공
+        /// </summary>
+        public async Task PostInitializeAsync()
+        {
+            try
+            {
+                System.Diagnostics.Debug.WriteLine("=== PostInitializeAsync 시작 ===");
+                
+                // 사용자 정보 설정 (UI 스레드에서 직접 실행)
+                if (!string.IsNullOrEmpty(LoggedInUserId))
                 {
-                    await InitializeApplicationAsync();
-                });
-            });
+                    var adminText = IsAdminUser ? " (관리자)" : "";
+                    Title = $"Masin 세이브코드 분류 - {LoggedInUserId}님{adminText} 환영합니다";
+                    System.Diagnostics.Debug.WriteLine($"창 제목 설정: {Title}");
+                    
+                    // 관리자 권한에 따라 토큰 생성 탭 표시/숨김
+                    SetTokenGeneratorTabVisibility(IsAdminUser);
+                    System.Diagnostics.Debug.WriteLine("토큰 생성 탭 설정 완료");
+                }
+                
+                // TokenGeneratorControl 설정
+                try
+                {
+                    if (TokenGeneratorControl != null && _userService != null)
+                    {
+                        TokenGeneratorControl.SetUserService(_userService);
+                        System.Diagnostics.Debug.WriteLine("TokenGeneratorControl 설정 완료");
+                    }
+                }
+                catch (Exception tokenEx)
+                {
+                    System.Diagnostics.Debug.WriteLine($"TokenGeneratorControl 설정 오류: {tokenEx.Message}");
+                }
+                
+                System.Diagnostics.Debug.WriteLine("=== PostInitializeAsync 완료 (간소화 버전) ===");
+                await Task.CompletedTask; // 비동기 메서드 형식 유지
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"PostInitializeAsync 오류: {ex.Message}");
+                UpdateStatus($"초기화 중 오류: {ex.Message}");
+            }
         }
         #endregion
 
@@ -69,41 +140,124 @@ namespace SaveCodeClassfication
         {
             try
             {
+                System.Diagnostics.Debug.WriteLine("=== InitializeApplicationAsync 시작 ===");
+                
                 // 설정 로드 및 정렬 옵션 설정
+                System.Diagnostics.Debug.WriteLine("설정 로드 중...");
                 var settings = await _settingsService.LoadSettingsAsync();
                 _simpleSortSettings = settings.SimpleSortSettings;
+                System.Diagnostics.Debug.WriteLine("설정 로드 완료");
                 
-                // 정렬 UI 업데이트
-                UpdateDateSortDisplayUI();
+                // 데이터베이스 서비스 재초기화 (설정에서 로드된 값으로)
+                System.Diagnostics.Debug.WriteLine("데이터베이스 서비스 재초기화 중...");
+                _databaseService = new DatabaseService(settings.DatabaseSettings);
+                _cacheService = new CacheService(_databaseService, _settingsService);
+                System.Diagnostics.Debug.WriteLine("데이터베이스 서비스 재초기화 완료");
+                
+                // UserService 재초기화 (설정에서 로드된 연결 문자열로)
+                System.Diagnostics.Debug.WriteLine("UserService 재초기화 중...");
+                _userService = new UserService(settings.DatabaseSettings.GetConnectionString());
+                System.Diagnostics.Debug.WriteLine("UserService 재초기화 완료");
+
+                // 데이터베이스 연결 테스트 및 초기화
+                System.Diagnostics.Debug.WriteLine("데이터베이스 연결 테스트 중...");
+                UpdateStatus("데이터베이스 연결을 확인하는 중...");
+                var dbConnected = await _cacheService.TestDatabaseConnectionAsync();
+                
+                if (dbConnected)
+                {
+                    System.Diagnostics.Debug.WriteLine("데이터베이스 연결 성공");
+                    UpdateStatus("데이터베이스 테이블을 초기화하는 중...");
+                    var dbInitialized = await _cacheService.InitializeDatabaseAsync();
+                    
+                    if (dbInitialized)
+                    {
+                        System.Diagnostics.Debug.WriteLine("데이터베이스 초기화 성공");
+                        UpdateStatus("데이터베이스 연결 성공");
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine("데이터베이스 초기화 실패");
+                        UpdateStatus("데이터베이스 초기화 실패");
+                        // 초기화 실패 시에도 계속 진행
+                    }
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("데이터베이스 연결 실패");
+                    UpdateStatus("데이터베이스 연결 실패");
+                    // 연결 실패 시에도 계속 진행
+                }
                 
                 // 캐릭터 이름 매핑 로드
-                var mappingLoaded = await _nameMappingService.LoadMappingsAsync();
-                if (mappingLoaded)
+                try
                 {
-                    UpdateStatus($"캐릭터 이름 매핑 로드 완료: {_nameMappingService.GetMappingCount()}개 매핑");
+                    System.Diagnostics.Debug.WriteLine("캐릭터 이름 매핑 로드 중...");
+                    var mappingLoaded = await _nameMappingService.LoadMappingsAsync();
+                    if (mappingLoaded)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"캐릭터 이름 매핑 로드 성공: {_nameMappingService.GetMappingCount()}개");
+                        UpdateStatus($"캐릭터 이름 매핑 로드 완료: {_nameMappingService.GetMappingCount()}개 매핑");
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine("캐릭터 이름 매핑 파일 없음");
+                        UpdateStatus("charName.json 파일이 없습니다. 원래 캐릭터명을 사용합니다.");
+                    }
                 }
-                else
+                catch (Exception mappingEx)
                 {
-                    UpdateStatus("charName.json 파일이 없습니다. 원래 캐릭터명을 사용합니다.");
+                    System.Diagnostics.Debug.WriteLine($"캐릭터 이름 매핑 로드 오류: {mappingEx.Message}");
+                    UpdateStatus($"캐릭터 이름 매핑 로드 오류: {mappingEx.Message}");
                 }
 
-                // 캐시 정보 업데이트
-                await UpdateCacheInfoAsync();
+                // 데이터베이스 정보 업데이트
+                try
+                {
+                    System.Diagnostics.Debug.WriteLine("데이터베이스 정보 업데이트 중...");
+                    await UpdateCacheInfoAsync();
+                    System.Diagnostics.Debug.WriteLine("데이터베이스 정보 업데이트 완료");
+                }
+                catch (Exception cacheInfoEx)
+                {
+                    System.Diagnostics.Debug.WriteLine($"데이터베이스 정보 업데이트 오류: {cacheInfoEx.Message}");
+                    UpdateStatus($"데이터베이스 정보 업데이트 오류: {cacheInfoEx.Message}");
+                }
                 
-                if (!string.IsNullOrEmpty(settings.LastSelectedFolderPath) && 
-                    Directory.Exists(settings.LastSelectedFolderPath))
+                // 폴더 로드
+                try
                 {
-                    UpdateStatus("저장된 폴더 경로를 로드하는 중...");
-                    await LoadFolderAsync(settings.LastSelectedFolderPath, autoLoad: true);
+                    if (!string.IsNullOrEmpty(settings.LastSelectedFolderPath) && 
+                        Directory.Exists(settings.LastSelectedFolderPath))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"저장된 폴더 로드: {settings.LastSelectedFolderPath}");
+                        UpdateStatus("저장된 폴더 경로를 로드하는 중...");
+                        await LoadFolderAsync(settings.LastSelectedFolderPath, autoLoad: true);
+                        System.Diagnostics.Debug.WriteLine("폴더 로드 완료");
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine("저장된 폴더 경로 없음");
+                        UpdateStatus("저장된 폴더 경로가 없습니다. 폴더를 선택해주세요.");
+                    }
                 }
-                else
+                catch (Exception folderEx)
                 {
-                    UpdateStatus("저장된 폴더 경로가 없습니다. 폴더를 선택해주세요.");
+                    System.Diagnostics.Debug.WriteLine($"폴더 로드 오류: {folderEx.Message}");
+                    UpdateStatus($"폴더 로드 오류: {folderEx.Message}");
                 }
+                
+                System.Diagnostics.Debug.WriteLine("=== InitializeApplicationAsync 완료 ===");
             }
             catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine($"=== InitializeApplicationAsync 전체 오류 ===");
+                System.Diagnostics.Debug.WriteLine($"오류 타입: {ex.GetType().Name}");
+                System.Diagnostics.Debug.WriteLine($"오류 메시지: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"스택 트레이스: {ex.StackTrace}");
                 UpdateStatus($"초기화 오류: {ex.Message}");
+                
+                // 초기화 실패해도 애플리케이션은 계속 실행
             }
         }
         #endregion
@@ -242,35 +396,34 @@ namespace SaveCodeClassfication
         /// </summary>
         private async Task HandleCacheAsync(string folderPath, string[] txtFiles, bool autoLoad)
         {
-            UpdateStatus("캐시된 분석 결과를 확인하는 중...");
-            var cache = await _cacheService.LoadCacheAsync();
+            UpdateStatus("데이터베이스에서 저작된 세이브 코드를 확인하는 중...");
             
-            if (cache != null && _cacheService.IsCacheValid(cache, folderPath, _txtFiles))
+            // 데이터베이스에서 데이터 조회 시도
+            await LoadCharactersFromDatabase();
+            
+            if (_characters.Count > 0)
             {
-                UpdateStatus("캐시된 분석 결과를 로드하는 중...");
-                await LoadFromCacheAsync(cache);
-                
-                var message = $"캐시에서 로드 완료: {txtFiles.Length}개 파일, {_characters.Count}개 캐릭터";
+                var message = $"데이터베이스에서 로드 완료: {_characters.Count}개 캐릭터를 찾았습니다.";
                 UpdateStatus(message);
                 
                 if (!autoLoad)
                 {
-                    WpfMessageBox.Show($"캐시된 분석 결과를 로드했습니다!\n{_characters.Count}개의 캐릭터를 찾았습니다.\n\n최신 분석이 필요하면 '파일 분석' 버튼을 클릭하세요.", 
-                                      "캐시 로드 완료", MessageBoxButton.OK, MessageBoxImage.Information);
+                    WpfMessageBox.Show($"데이터베이스에서 기존 세이브 코드를 로드했습니다!\n{_characters.Count}개의 캐릭터를 찾았습니다.\n\n최신 분석이 필요하면 '파일 분석' 버튼을 클릭하세요.", 
+                                      "데이터베이스 로드 완료", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
             }
             else
             {
                 var message = autoLoad 
-                    ? $"자동 로드 완료: {txtFiles.Length}개의 TXT 파일을 찾았습니다. 분석이 필요합니다."
-                    : $"{txtFiles.Length}개의 TXT 파일을 찾았습니다. 분석 버튼을 클릭해주세요.";
+                    ? $"자동 로드 완료: {txtFiles.Length}개의 TXT 파일을 찾았습니다. 데이터베이스에 저장된 데이터가 없어 분석이 필요합니다."
+                    : $"{txtFiles.Length}개의 TXT 파일을 찾았습니다. 데이터베이스에 저장된 데이터가 없습니다. 파일 분석을 진행해주세요.";
                 
                 UpdateStatus(message);
                 
                 if (!autoLoad)
                 {
-                    WpfMessageBox.Show($"{txtFiles.Length}개의 TXT 파일을 찾았습니다.\n'파일 분석' 버튼을 클릭하여 캐릭터별로 분류하세요.", 
-                                      "성공", MessageBoxButton.OK, MessageBoxImage.Information);
+                    WpfMessageBox.Show($"{txtFiles.Length}개의 TXT 파일을 찾았습니다.\n데이터베이스에 저장된 세이브 코드가 없습니다.\n\n'파일 분석' 버튼을 클릭하여 캐릭터별로 분류하세요.", 
+                                      "분석 필요", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
             }
         }
@@ -365,69 +518,167 @@ namespace SaveCodeClassfication
         /// </summary>
         private async Task HandleAnalysisResultAsync((List<SaveCodeInfo> SaveCodes, int ValidFiles) result)
         {
-            var characterDict = result.SaveCodes
-                .GroupBy(s => s.CharacterName)
-                .ToDictionary(g => g.Key, g => g.ToList());
-
-            // 캐릭터 정보 객체 생성
-            foreach (var kvp in characterDict.OrderBy(x => x.Key))
-            {
-                // 세이브 코드를 현재 날짜 정렬 설정으로 정렬
-                var sortedSaveCodes = SimpleSortService.SortSaveCodes(kvp.Value, _simpleSortSettings);
-                
-                var characterInfo = new CharacterInfo
-                {
-                    CharacterName = kvp.Key,
-                    OriginalCharacterName = kvp.Key,
-                    SaveCodes = new ObservableCollection<SaveCodeInfo>(sortedSaveCodes),
-                    SaveCodeCount = $"세이브 코드: {kvp.Value.Count}개",
-                    LastModified = kvp.Value.Max(x => x.FileDate).ToString("yyyy-MM-dd HH:mm")
-                };
-                _characters.Add(characterInfo);
-            }
-
-            // UI 업데이트
-            FilterCharacters();
-            UpdateCharacterCountDisplay();
-            UpdateStatus($"분석 완료: {result.ValidFiles}개의 유효한 세이브 코드 파일에서 {_characters.Count}개의 캐릭터를 찾았습니다 (정렬: {_simpleSortSettings.GetDisplayName()})");
-
-            // 캐시 저장
-            if (result.SaveCodes.Count > 0 && !string.IsNullOrEmpty(_selectedFolderPath))
-            {
-                UpdateStatus("분석 결과를 캐시에 저장하는 중...");
-                await SaveAnalysisResultsToCacheAsync(_selectedFolderPath, result.SaveCodes);
-            }
-
-            // 결과 메시지
-            ShowAnalysisCompletionMessage(result.ValidFiles);
-        }
-
-        /// <summary>
-        /// 분석 완료 메시지를 표시합니다
-        /// </summary>
-        private void ShowAnalysisCompletionMessage(int validFiles)
-        {
-            if (_characters.Count == 0)
+            // 분석 완료 메시지
+            if (result.SaveCodes.Count == 0)
             {
                 WpfMessageBox.Show("유효한 세이브 코드 파일을 찾을 수 없습니다.\n파일에 '캐릭터:'와 'Code:' 부분이 포함되어 있는지 확인해주세요.", 
                                   "정보", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            // 중복 캐릭터 분석 및 정보 표시
+            var characterGroups = result.SaveCodes
+                .Where(s => !string.IsNullOrWhiteSpace(s.CharacterName))
+                .GroupBy(s => _nameMappingService.GetDisplayCharacterName(s.CharacterName).Trim())
+                .ToList();
+
+            System.Diagnostics.Debug.WriteLine($"=== 분석 결과 ===");
+            System.Diagnostics.Debug.WriteLine($"총 세이브 코드: {result.SaveCodes.Count}개");
+            System.Diagnostics.Debug.WriteLine($"고유 캐릭터: {characterGroups.Count}개");
+            
+            foreach (var group in characterGroups)
+            {
+                System.Diagnostics.Debug.WriteLine($"📋 '{group.Key}': {group.Count()}개 세이브 코드");
+            }
+
+            UpdateStatus($"분석 완료: {result.ValidFiles}개의 유효한 세이브 코드 파일을 찾았습니다. 데이터베이스에 저장 중...");
+
+            // 데이터베이스에 자동 저장
+            var saveSuccess = await SaveToDatabase(result.SaveCodes);
+            
+            if (saveSuccess)
+            {
+                // 저장 성공 후 데이터베이스에서 데이터 조회해서 표시
+                UpdateStatus("데이터베이스에서 저장된 데이터를 조회하는 중...");
+                await LoadCharactersFromDatabase();
+                
+                UpdateStatus($"분석 및 저장 완료: {result.ValidFiles}개의 세이브 코드가 데이터베이스에 저장되고 조회되었습니다.");
+                
+                WpfMessageBox.Show($"파일 분석 및 데이터베이스 저장 완료!\n\n분석된 파일: {result.ValidFiles}개\n고유 캐릭터: {characterGroups.Count}개\n데이터베이스에서 조회된 캐릭터: {_characters.Count}개\n\n분석된 세이브 코드가 데이터베이스에 저장되고 화면에 표시되었습니다.", 
+                                  "분석 완료", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             else
             {
-                WpfMessageBox.Show($"분석 완료!\n{_characters.Count}개의 캐릭터에서 총 {validFiles}개의 세이브 코드를 찾았습니다.\n\n결과가 캐시에 저장되어 다음번엔 더 빠르게 로드됩니다.", 
-                                  "성공", MessageBoxButton.OK, MessageBoxImage.Information);
+                WpfMessageBox.Show($"파일 분석은 완료되었지만 데이터베이스 저장에 실패했습니다.\n\n분석된 파일: {result.ValidFiles}개\n고유 캐릭터: {characterGroups.Count}개\n\n데이터베이스 설정을 확인하고 '조회' 버튼을 사용해서 기존 데이터를 확인해보세요.", 
+                                  "저장 실패", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
-        #endregion
 
-        #region Cache Operations
         /// <summary>
-        /// 분석 결과를 캐시에 저장합니다
+        /// 데이터베이스에서 캐릭터 데이터를 조회해서 화면에 표시합니다
         /// </summary>
-        private async Task SaveAnalysisResultsToCacheAsync(string folderPath, List<SaveCodeInfo> saveCodes)
+        private async Task LoadCharactersFromDatabase()
         {
             try
             {
+                _characters.Clear();
+                
+                // 데이터베이스에서 세이브 코드 조회
+                var saveCodes = await _cacheService.LoadCharacterSaveCodesAsync();
+                
+                if (saveCodes.Count == 0)
+                {
+                    UpdateStatus("데이터베이스에 저장된 세이브 코드가 없습니다.");
+                    return;
+                }
+
+                System.Diagnostics.Debug.WriteLine($"=== 데이터베이스에서 {saveCodes.Count}개 세이브 코드 조회 완료 ===");
+
+                // 캐릭터명으로만 그룹화 (파일명과 무관하게)
+                var characterDict = new Dictionary<string, List<SaveCodeInfo>>();
+                
+                foreach (var saveCode in saveCodes)
+                {
+                    if (string.IsNullOrWhiteSpace(saveCode.CharacterName))
+                        continue;
+
+                    // 캐릭터 이름 매핑 적용
+                    var originalName = saveCode.CharacterName;
+                    var mappedName = _nameMappingService.GetDisplayCharacterName(originalName);
+                    var finalName = mappedName.Trim();
+                    
+                    System.Diagnostics.Debug.WriteLine($"🔍 원본명: '{originalName}' -> 최종명: '{finalName}'");
+                    
+                    if (!characterDict.ContainsKey(finalName))
+                    {
+                        characterDict[finalName] = new List<SaveCodeInfo>();
+                    }
+                    
+                    characterDict[finalName].Add(saveCode);
+                }
+
+                System.Diagnostics.Debug.WriteLine($"=== 캐릭터별 그룹화 결과: {characterDict.Count}개 고유 캐릭터 ===");
+
+                // 캐릭터 정보 객체 생성
+                foreach (var kvp in characterDict.OrderBy(x => x.Key))
+                {
+                    var characterName = kvp.Key;
+                    var characterSaveCodes = kvp.Value;
+                    
+                    // 세이브 코드를 현재 날짜 정렬 설정으로 정렬 (파일명 중복 제거 없이)
+                    var sortedSaveCodes = SimpleSortService.SortSaveCodes(characterSaveCodes, _simpleSortSettings);
+                    
+                    System.Diagnostics.Debug.WriteLine($"📋 캐릭터: {characterName} - {characterSaveCodes.Count}개 세이브 코드");
+                    foreach (var save in characterSaveCodes.Take(3)) // 처음 3개만 로그 출력
+                    {
+                        System.Diagnostics.Debug.WriteLine($"   📅 {save.FileDate:yyyy-MM-dd HH:mm:ss} - {save.FileName}");
+                    }
+                    if (characterSaveCodes.Count > 3)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"   ... 및 {characterSaveCodes.Count - 3}개 더");
+                    }
+                    
+                    var characterInfo = new CharacterInfo
+                    {
+                        CharacterName = characterName,
+                        OriginalCharacterName = characterName,
+                        SaveCodes = new ObservableCollection<SaveCodeInfo>(sortedSaveCodes),
+                        SaveCodeCount = $"세이브 코드: {characterSaveCodes.Count}개",
+                        LastModified = characterSaveCodes.Max(x => x.FileDate).ToString("yyyy-MM-dd HH:mm")
+                    };
+                    
+                    _characters.Add(characterInfo);
+                }
+
+                // UI 업데이트
+                FilterCharacters();
+                UpdateCharacterCountDisplay();
+                UpdateDatabaseSaveButtonState();
+                
+                System.Diagnostics.Debug.WriteLine($"✅ 최종 결과: {_characters.Count}개 고유 캐릭터가 UI에 표시됨");
+                
+                // 각 캐릭터의 세이브 코드 수 요약
+                foreach (var character in _characters)
+                {
+                    System.Diagnostics.Debug.WriteLine($"   🎮 {character.CharacterName}: {character.SaveCodes.Count}개 세이브");
+                }
+            }
+            catch (Exception ex)
+            {
+                UpdateStatus($"데이터베이스 조회 중 오류: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"LoadCharactersFromDatabase 오류: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"스택 트레이스: {ex.StackTrace}");
+            }
+        }
+
+        /// <summary>
+        /// 데이터베이스에 세이브 코드를 저장합니다
+        /// </summary>
+        private async Task<bool> SaveToDatabase(List<SaveCodeInfo> saveCodes)
+        {
+            try
+            {
+                System.Diagnostics.Debug.WriteLine($"=== MainWindow: 데이터베이스 저장 시작 ===");
+                System.Diagnostics.Debug.WriteLine($"저장할 세이브 코드 수: {saveCodes.Count}");
+
+                // 데이터베이스 연결 확인
+                var connectionTest = await _cacheService.TestDatabaseConnectionAsync();
+                if (!connectionTest)
+                {
+                    UpdateStatus("데이터베이스 연결 실패");
+                    return false;
+                }
+
                 var fileHashes = new Dictionary<string, DateTime>();
                 
                 foreach (var file in _txtFiles)
@@ -437,7 +688,7 @@ namespace SaveCodeClassfication
 
                 var cache = new AnalysisCache
                 {
-                    FolderPath = folderPath,
+                    FolderPath = _selectedFolderPath ?? "",
                     LastAnalyzed = DateTime.Now,
                     FileHashes = fileHashes,
                     SaveCodes = saveCodes,
@@ -445,16 +696,44 @@ namespace SaveCodeClassfication
                     Version = "1.0.0"
                 };
 
-                await _cacheService.SaveCacheAsync(cache);
+                // 저장 시작 시간 기록
+                var startTime = DateTime.Now;
+
+                System.Diagnostics.Debug.WriteLine("CacheService.SaveCacheAsync 호출 전");
+                var success = await _cacheService.SaveCacheAsync(cache);
+                System.Diagnostics.Debug.WriteLine($"CacheService.SaveCacheAsync 결과: {success}");
+                
+                if (success)
+                {
+                    var elapsed = DateTime.Now - startTime;
+                    System.Diagnostics.Debug.WriteLine($"데이터베이스 저장 완료: {saveCodes.Count}개 저장, 소요시간 {elapsed.TotalSeconds:F1}초");
+                    
+                    // 데이터베이스 정보 업데이트
+                    await UpdateCacheInfoAsync();
+                    return true;
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("데이터베이스 저장 실패 - 프로시저 실행 오류");
+                    return false;
+                }
             }
             catch (Exception ex)
             {
-                UpdateStatus($"캐시 저장 중 오류: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"=== MainWindow: 저장 중 예외 발생 ===");
+                System.Diagnostics.Debug.WriteLine($"예외 타입: {ex.GetType().Name}");
+                System.Diagnostics.Debug.WriteLine($"메시지: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"스택 트레이스: {ex.StackTrace}");
+                
+                UpdateStatus($"데이터베이스 저장 중 오류: {ex.Message}");
+                return false;
             }
         }
+        #endregion
 
+        #region Cache Operations
         /// <summary>
-        /// 캐시에서 데이터를 로드합니다
+        /// 데이터베이스에서 데이터를 로드합니다
         /// </summary>
         private async Task LoadFromCacheAsync(AnalysisCache cache)
         {
@@ -483,57 +762,22 @@ namespace SaveCodeClassfication
 
                 FilterCharacters();
                 UpdateCharacterCountDisplay();
+                UpdateDatabaseSaveButtonState(); // 버튼 상태 업데이트 추가
                 
                 await Task.CompletedTask;
             }
             catch (Exception ex)
             {
-                UpdateStatus($"캐시 로드 중 오류: {ex.Message}");
+                UpdateStatus($"데이터베이스 로드 중 오류: {ex.Message}");
             }
         }
 
         /// <summary>
-        /// 캐시 정보를 업데이트합니다
+        /// 데이터베이스 정보를 업데이트합니다
         /// </summary>
         private async Task UpdateCacheInfoAsync()
         {
             TxtCacheInfo.Text = await _cacheService.GetCacheInfoAsync();
-        }
-
-        /// <summary>
-        /// 캐시 삭제 버튼 클릭
-        /// </summary>
-        private async void BtnClearCache_Click(object sender, RoutedEventArgs e)
-        {
-            var result = WpfMessageBox.Show(
-                "캐시를 삭제하시겠습니까?\n\n삭제 후에는 다시 파일 분석을 해야 합니다.",
-                "캐시 삭제 확인",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question);
-
-            if (result == MessageBoxResult.Yes)
-            {
-                try
-                {
-                    var deleted = _cacheService.DeleteCache();
-                    if (deleted)
-                    {
-                        UpdateStatus("캐시가 삭제되었습니다.");
-                        await UpdateCacheInfoAsync();
-                        WpfMessageBox.Show("캐시가 성공적으로 삭제되었습니다.", "삭제 완료", 
-                                          MessageBoxButton.OK, MessageBoxImage.Information);
-                    }
-                    else
-                    {
-                        WpfMessageBox.Show("삭제할 캐시 파일이 없습니다.", "정보", 
-                                          MessageBoxButton.OK, MessageBoxImage.Information);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    ShowError($"캐시 삭제 실패: {ex.Message}");
-                }
-            }
         }
         #endregion
 
@@ -566,80 +810,96 @@ namespace SaveCodeClassfication
         /// </summary>
         private void FilterCharacters()
         {
-            _filteredCharacters.Clear();
-
-            if (string.IsNullOrEmpty(_currentSearchText))
+            try
             {
-                foreach (var character in _characters)
+                _filteredCharacters.Clear();
+
+                if (string.IsNullOrEmpty(_currentSearchText))
                 {
-                    _filteredCharacters.Add(character);
+                    foreach (var character in _characters)
+                    {
+                        _filteredCharacters.Add(character);
+                    }
+                    
+                    SearchResultPanel.Visibility = Visibility.Collapsed;
                 }
-                
-                SearchResultPanel.Visibility = Visibility.Collapsed;
+                else
+                {
+                    var filteredList = _characters.Where(c => 
+                        c.CharacterName.Contains(_currentSearchText, StringComparison.OrdinalIgnoreCase) ||
+                        c.OriginalCharacterName.Contains(_currentSearchText, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+
+                    foreach (var character in filteredList)
+                    {
+                        _filteredCharacters.Add(character);
+                    }
+
+                    ShowCharacterSearchResult(filteredList.Count);
+                }
+
+                LstCharacters.SelectedItem = null;
+                ClearCharacterSelection();
                 UpdateCharacterCountDisplay();
+                
+                UpdateStatus($"캐릭터 필터링 완료: {_filteredCharacters.Count}개 표시");
             }
-            else
+            catch (Exception ex)
             {
-                var filteredList = _characters.Where(c => 
-                    c.CharacterName.Contains(_currentSearchText, StringComparison.OrdinalIgnoreCase) ||
-                    c.OriginalCharacterName.Contains(_currentSearchText, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
+                System.Diagnostics.Debug.WriteLine($"FilterCharacters 오류: {ex.Message}");
+                UpdateStatus($"필터링 오류: {ex.Message}");
+            }
+        }
 
-                foreach (var character in filteredList)
+        /// <summary>
+        /// 캐릭터 검색 결과를 표시합니다
+        /// </summary>
+        private void ShowCharacterSearchResult(int resultCount)
+        {
+            try
+            {
+                SearchResultPanel.Visibility = Visibility.Visible;
+                
+                if (resultCount == 0)
                 {
-                    _filteredCharacters.Add(character);
+                    TxtSearchResult.Text = "검색 결과 없음";
+                    TxtSearchResult.Foreground = MediaBrushes.Orange;
+                    TxtSearchCount.Text = $"'{_currentSearchText}'에 해당하는 캐릭터가 없습니다";
                 }
-
-                ShowSearchResult(filteredList.Count);
+                else
+                {
+                    TxtSearchResult.Text = "검색 결과";
+                    TxtSearchResult.Foreground = MediaBrushes.DodgerBlue;
+                    TxtSearchCount.Text = $"'{_currentSearchText}' - {resultCount}개 캐릭터 발견";
+                }
             }
-
-            LstCharacters.SelectedItem = null;
-            ClearCharacterSelection();
-            
-            UpdateStatus($"캐릭터 검색: '{_currentSearchText}' - {_filteredCharacters.Count}개 결과");
-        }
-
-        /// <summary>
-        /// 검색 결과를 표시합니다
-        /// </summary>
-        private void ShowSearchResult(int resultCount)
-        {
-            SearchResultPanel.Visibility = Visibility.Visible;
-            
-            if (resultCount == 0)
+            catch (Exception ex)
             {
-                TxtSearchResult.Text = "검색 결과 없음";
-                TxtSearchResult.Foreground = MediaBrushes.Orange;
-                TxtSearchCount.Text = $"'{_currentSearchText}'에 해당하는 캐릭터가 없습니다";
-            }
-            else
-            {
-                TxtSearchResult.Text = "검색 결과";
-                TxtSearchResult.Foreground = MediaBrushes.DodgerBlue;
-                TxtSearchCount.Text = $"'{_currentSearchText}' - {resultCount}개 캐릭터 발견";
-            }
-        }
-
-        /// <summary>
-        /// 캐릭터 개수 표시를 업데이트합니다
-        /// </summary>
-        private void UpdateCharacterCountDisplay()
-        {
-            var totalCount = _characters.Count;
-            var displayedCount = _filteredCharacters.Count;
-            
-            if (string.IsNullOrEmpty(_currentSearchText))
-            {
-                TxtCharacterCount.Text = $"분석된 캐릭터: {totalCount}개";
-            }
-            else
-            {
-                TxtCharacterCount.Text = $"표시된 캐릭터: {displayedCount}개 / 전체: {totalCount}개";
+                System.Diagnostics.Debug.WriteLine($"ShowCharacterSearchResult 오류: {ex.Message}");
             }
         }
         #endregion
 
         #region UI Event Handlers
+        /// <summary>
+        /// 날짜 정렬 방향을 토글합니다 (최신순 ⇄ 오래된순)
+        /// </summary>
+        private async void ToggleDateSort_Click(object sender, RoutedEventArgs e)
+        {
+            _simpleSortSettings.ToggleDirection();
+            
+            // 현재 선택된 캐릭터의 세이브 코드 다시 정렬
+            if (LstCharacters.SelectedItem is CharacterInfo selectedCharacter)
+            {
+                ApplyDateSortToCurrentSaveCodes(selectedCharacter.SaveCodes);
+            }
+            
+            // 설정 저장
+            await SaveSimpleSortSettingsAsync();
+            
+            UpdateStatus($"정렬 방향 변경: {_simpleSortSettings.GetDisplayName()}");
+        }
+
         /// <summary>
         /// 캐릭터 선택 변경 이벤트
         /// </summary>
@@ -700,22 +960,28 @@ namespace SaveCodeClassfication
         }
 
         /// <summary>
-        /// 날짜 정렬 방향을 토글합니다 (최신순 ⇄ 오래된순)
+        /// 캐릭터 개수 표시를 업데이트합니다
         /// </summary>
-        private async void ToggleDateSort_Click(object sender, RoutedEventArgs e)
+        private void UpdateCharacterCountDisplay()
         {
-            _simpleSortSettings.ToggleDirection();
-            
-            // 현재 선택된 캐릭터의 세이브 코드 다시 정렬
-            if (LstCharacters.SelectedItem is CharacterInfo selectedCharacter)
+            try
             {
-                ApplyDateSortToCurrentSaveCodes(selectedCharacter.SaveCodes);
+                var totalCount = _characters.Count;
+                var displayedCount = _filteredCharacters.Count;
+                
+                if (string.IsNullOrEmpty(_currentSearchText))
+                {
+                    TxtCharacterCount.Text = $"분석된 캐릭터: {totalCount}개";
+                }
+                else
+                {
+                    TxtCharacterCount.Text = $"표시된 캐릭터: {displayedCount}개 / 전체: {totalCount}개";
+                }
             }
-            
-            // 설정 저장
-            await SaveSimpleSortSettingsAsync();
-            
-            UpdateStatus($"정렬 방향 변경: {_simpleSortSettings.GetDisplayName()}");
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"UpdateCharacterCountDisplay 오류: {ex.Message}");
+            }
         }
 
         /// <summary>
@@ -749,6 +1015,13 @@ namespace SaveCodeClassfication
             BtnChangeFolder.IsEnabled = !isLoading;
             BtnReloadFolder.IsEnabled = !isLoading;
             BtnAnalyzeFiles.IsEnabled = !isLoading && _txtFiles.Count > 0;
+            
+            // 데이터베이스 저장 버튼은 로딩 중이 아니고 분석된 캐릭터가 있을 때만 활성화
+            var saveToDbButton = FindName("BtnSaveToDatabase") as System.Windows.Controls.Button;
+            if (saveToDbButton != null)
+            {
+                saveToDbButton.IsEnabled = !isLoading && _characters.Count > 0;
+            }
         }
 
         /// <summary>
@@ -756,7 +1029,21 @@ namespace SaveCodeClassfication
         /// </summary>
         private void UpdateStatus(string message)
         {
-            StatusBarMessage.Content = message;
+            try
+            {
+                if (StatusBarMessage != null)
+                {
+                    StatusBarMessage.Content = message;
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"StatusBar 업데이트 (UI 없음): {message}");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"StatusBar 업데이트 오류: {ex.Message} | 메시지: {message}");
+            }
         }
 
         /// <summary>
@@ -806,6 +1093,21 @@ namespace SaveCodeClassfication
             _characters.Clear();
             _filteredCharacters.Clear();
             _currentSaveCodes.Clear();
+            
+            // 데이터베이스 저장 버튼 상태 업데이트
+            UpdateDatabaseSaveButtonState();
+        }
+
+        /// <summary>
+        /// 데이터베이스 저장 버튼 상태를 업데이트합니다
+        /// </summary>
+        private void UpdateDatabaseSaveButtonState()
+        {
+            var saveToDbButton = FindName("BtnSaveToDatabase") as System.Windows.Controls.Button;
+            if (saveToDbButton != null)
+            {
+                saveToDbButton.IsEnabled = _characters.Count > 0;
+            }
         }
 
         /// <summary>
@@ -914,7 +1216,7 @@ namespace SaveCodeClassfication
             detailText.AppendLine($"👤 캐릭터: {displayName}");
             detailText.AppendLine();
             
-            // 세이브 코드 (강조)
+            // 세이브 코드 (강調)
             detailText.AppendLine("📋 세이브 코드:");
             detailText.AppendLine($"┌─────────────────────────────────────┐");
             detailText.AppendLine($"│ {selectedCode.SaveCode.PadRight(35)} │");
@@ -957,7 +1259,7 @@ namespace SaveCodeClassfication
 
             TxtSelectedCode.Text = detailText.ToString();
             TxtSelectedCode.Foreground = MediaBrushes.Black;
-            UpdateStatus($"세이브 코드 '{selectedCode.FileName}' 상세 정보 표시 (레벨 {selectedCode.Level}, 무력 {selectedCode.PhysicalPower})");
+            UpdateStatus($"세이브 코드 '{selectedCode.FileName}' 상세 정보 표시 (레 vel {selectedCode.Level}, 무력 {selectedCode.PhysicalPower})");
         }
 
         /// <summary>
@@ -1055,24 +1357,163 @@ namespace SaveCodeClassfication
         }
 
         /// <summary>
-        /// 초기화 버튼 클릭
+        /// 데이터베이스 조회 버튼 클릭 (기존 초기화 버튼)
         /// </summary>
         private async void BtnClearCharacters_Click(object sender, RoutedEventArgs e)
         {
-            if (_characters.Count > 0)
+            try
             {
-                var result = WpfMessageBox.Show(
-                    "정말로 모든 분석 결과를 지우시겠습니까?",
-                    "확인",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Question);
-
-                if (result == MessageBoxResult.Yes)
+                ShowLoadingState(true);
+                UpdateStatus("데이터베이스에서 저장된 세이브 코드를 조회하는 중...");
+                
+                await LoadCharactersFromDatabase();
+                
+                if (_characters.Count > 0)
                 {
-                    ClearAll();
-                    WpfMessageBox.Show("모든 내용이 지워졌습니다.", "정보", 
-                                      MessageBoxButton.OK, MessageBoxImage.Information);
+                    UpdateStatus($"데이터베이스 조회 완료: {_characters.Count}개 캐릭터를 찾았습니다.");
+                    WpfMessageBox.Show($"데이터베이스 조회 완료!\n\n조회된 캐릭터: {_characters.Count}개\n\n저장된 모든 세이브 코드가 화면에 표시됩니다.", 
+                                      "조회 완료", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
+                else
+                {
+                    UpdateStatus("데이터베이스에 저장된 세이브 코드가 없습니다.");
+                    WpfMessageBox.Show("데이터베이스에 저장된 세이브 코드가 없습니다.\n\n먼저 파일을 분석하여 세이브 코드를 저장해주세요.", 
+                                      "조회 결과 없음", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowError($"데이터베이스 조회 중 오류가 발생했습니다: {ex.Message}");
+            }
+            finally
+            {
+                ShowLoadingState(false);
+            }
+        }
+
+        /// <summary>
+        /// 현재 분석된 결과를 데이터베이스에 저장하는 버튼 클릭
+        /// </summary>
+        private async void BtnSaveToDatabase_Click(object sender, RoutedEventArgs e)
+        {
+            if (_characters.Count == 0)
+            {
+                WpfMessageBox.Show("저장할 분석 결과가 없습니다.\n먼저 파일을 분석해주세요.", "알림", 
+                                  MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var result = WpfMessageBox.Show(
+                $"현재 화면에 표시된 {_characters.Count}개 캐릭터의 세이브 코드를 데이터베이스에 저장하시겠습니까?\n\n기존 데이터가 있다면 새로운 데이터로 교체됩니다.",
+                "데이터베이스 저장 확인",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (result == MessageBoxResult.Yes)
+            {
+                try
+                {
+                    ShowLoadingState(true);
+                    UpdateStatus("데이터베이스에 저장하는 중...");
+
+                    // 현재 분석된 모든 세이브 코드를 수집
+                    var allSaveCodes = new List<SaveCodeInfo>();
+                    foreach (var character in _characters)
+                    {
+                        allSaveCodes.AddRange(character.SaveCodes);
+                    }
+
+                    var saveSuccess = await SaveToDatabase(allSaveCodes);
+                    
+                    if (saveSuccess)
+                    {
+                        UpdateStatus($"데이터베이스 저장 완료: {allSaveCodes.Count}개의 세이브 코드가 저장되었습니다.");
+                        WpfMessageBox.Show($"데이터베이스 저장 완료!\n\n저장된 항목: {allSaveCodes.Count}개\n캐릭터 수: {_characters.Count}개\n\n다음번 실행 시 더 빠르게 로드됩니다.", 
+                                          "저장 완료", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                    else
+                    {
+                        UpdateStatus("데이터베이스 저장 실패");
+                        WpfMessageBox.Show("데이터베이스 저장에 실패했습니다.\n\n상세한 오류 정보는 Visual Studio의 출력 창(디버그)에서 확인할 수 있습니다.", 
+                                          "저장 실패", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    ShowError($"데이터베이스 저장 중 오류가 발생했습니다: {ex.Message}");
+                }
+                finally
+                {
+                    ShowLoadingState(false);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 토큰 생성 탭의 표시 여부를 설정합니다
+        /// </summary>
+        private void SetTokenGeneratorTabVisibility(bool isVisible)
+        {
+            try
+            {
+                System.Diagnostics.Debug.WriteLine($"토큰 탭 표시 여부 설정 시작: {isVisible}");
+                
+                // MainWindow.xaml에서 MainTabControl을 찾기
+                var tabControl = FindName("MainTabControl") as System.Windows.Controls.TabControl;
+
+                if (tabControl != null)
+                {
+                    System.Diagnostics.Debug.WriteLine($"MainTabControl을 찾음, 탭 개수: {tabControl.Items.Count}");
+                
+                    if (tabControl.Items.Count > 1)
+                    {
+                        var tokenTab = tabControl.Items[1] as TabItem; // 두 번째 탭이 토큰 생성 탭
+                        
+                        if (tokenTab != null)
+                        {
+                            if (isVisible)
+                            {
+                                tokenTab.Visibility = Visibility.Visible;
+                                System.Diagnostics.Debug.WriteLine("토큰 생성 탭 표시됨 (관리자 권한)");
+                            }
+                            else
+                            {
+                                tokenTab.Visibility = Visibility.Collapsed;
+                                
+
+                                // 현재 토큰 탭이 선택되어 있다면 첫 번째 탭으로 이동
+                                if (tabControl.SelectedItem == tokenTab)
+                                {
+                                    tabControl.SelectedIndex = 0;
+                                    System.Diagnostics.Debug.WriteLine("토큰 탭이 선택되어 있어서 첫 번째 탭으로 이동");
+                                }
+                                
+                                System.Diagnostics.Debug.WriteLine("토큰 생성 탭 숨김 (일반 사용자)");
+                            }
+                        }
+                        else
+                        {
+                            System.Diagnostics.Debug.WriteLine("경고: 두 번째 탭이 TabItem이 아님");
+                        }
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine($"경고: TabControl에 탭이 부족함 (현재: {tabControl.Items.Count}개)");
+                    }
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("경고: MainTabControl을 찾을 수 없음 - 계속 진행");
+                    // 탭 컨트롤을 찾지 못해도 메인창 로딩에는 문제없도록 함
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"토큰 탭 제어 오류: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"스택 트레이스: {ex.StackTrace}");
+                
+                // 토큰 탭 제어 실패는 치명적이지 않으므로 계속 진행
+                UpdateStatus($"토큰 탭 설정 오류: {ex.Message}");
             }
         }
         #endregion

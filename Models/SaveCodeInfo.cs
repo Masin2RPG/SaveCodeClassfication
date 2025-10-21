@@ -29,6 +29,10 @@ namespace SaveCodeClassfication.Models
         public string MagicalPower { get; set; } = string.Empty;  // 요력
         public string SpiritualPower { get; set; } = string.Empty; // 영력
 
+        // 직업 정보 추가
+        public string JobClass { get; set; } = string.Empty; // 직업명
+        public string JobDisplayText { get; set; } = string.Empty; // 표시용 직업명
+
         public event PropertyChangedEventHandler? PropertyChanged;
     }
 }

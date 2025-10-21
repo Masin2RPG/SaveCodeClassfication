@@ -1,90 +1,151 @@
-using System.IO;
-using System.Text;
-using System.Text.Json;
+using System.Collections.Generic;
 using SaveCodeClassfication.Models;
 
 namespace SaveCodeClassfication.Services
 {
     /// <summary>
-    /// 분석 결과 캐시를 관리하는 서비스
+    /// 분석 결과 저장소를 관리하는 서비스 (데이터베이스 기반)
     /// </summary>
     public class CacheService
     {
-        private readonly string _cacheFilePath;
+        private readonly DatabaseService _databaseService;
+        private readonly SettingsService _settingsService;
 
-        public CacheService(string cacheFilePath)
+        public CacheService(DatabaseService databaseService, SettingsService settingsService = null)
         {
-            _cacheFilePath = cacheFilePath;
+            _databaseService = databaseService;
+            _settingsService = settingsService;
         }
 
         /// <summary>
-        /// 캐시를 로드합니다
+        /// 캐시를 로드합니다 (데이터베이스에서)
         /// </summary>
-        public async Task<AnalysisCache?> LoadCacheAsync()
+        public Task<AnalysisCache?> LoadCacheAsync()
         {
-            try
-            {
-                if (!File.Exists(_cacheFilePath))
-                {
-                    return null;
-                }
-
-                var jsonString = await File.ReadAllTextAsync(_cacheFilePath, Encoding.UTF8);
-                var cache = JsonSerializer.Deserialize<AnalysisCache>(jsonString);
-                return cache;
-            }
-            catch
-            {
-                return null;
-            }
+            // 이 메서드는 폴더 경로가 필요하므로 더 이상 사용하지 않음
+            // LoadCacheAsync(string folderPath)를 사용해야 함
+            return Task.FromResult<AnalysisCache?>(null);
         }
 
         /// <summary>
-        /// 캐시를 저장합니다
+        /// 특정 폴더의 캐시를 로드합니다
+        /// </summary>
+        public async Task<AnalysisCache?> LoadCacheAsync(string folderPath)
+        {
+            return await _databaseService.LoadAnalysisAsync(folderPath);
+        }
+
+        /// <summary>
+        /// 캐시를 저장합니다 (데이터베이스에)
         /// </summary>
         public async Task<bool> SaveCacheAsync(AnalysisCache cache)
         {
-            try
-            {
-                // 캐시 디렉토리가 없으면 생성
-                var cacheDir = Path.GetDirectoryName(_cacheFilePath);
-                if (!Directory.Exists(cacheDir))
-                {
-                    Directory.CreateDirectory(cacheDir!);
-                }
-
-                var jsonString = JsonSerializer.Serialize(cache, new JsonSerializerOptions
-                {
-                    WriteIndented = true,
-                    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-                });
-
-                await File.WriteAllTextAsync(_cacheFilePath, jsonString, Encoding.UTF8);
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
+            var fileHashes = cache.FileHashes ?? new Dictionary<string, DateTime>();
+            
+            // 현재 사용자 키 가져오기
+            var userKey = await GetCurrentUserKeyAsync();
+            
+            return await _databaseService.SaveAnalysisAsync(cache.FolderPath, cache.SaveCodes, fileHashes, userKey);
         }
 
         /// <summary>
-        /// 캐시를 삭제합니다
+        /// 캐시를 삭제합니다 (데이터베이스의 사용자 데이터)
         /// </summary>
         public bool DeleteCache()
         {
             try
             {
-                if (File.Exists(_cacheFilePath))
-                {
-                    File.Delete(_cacheFilePath);
-                    return true;
-                }
-                return false;
+                var userKey = GetCurrentUserKeyAsync().Result;
+                var task = _databaseService.ClearAllDataAsync(userKey);
+                task.Wait();
+                return task.Result;
             }
             catch
             {
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// 저장된 캐릭터별 세이브코드를 조회합니다
+        /// </summary>
+        public async Task<List<SaveCodeInfo>> LoadCharacterSaveCodesAsync()
+        {
+            try
+            {
+                var userKey = await GetCurrentUserKeyAsync();
+                return await _databaseService.LoadUserSaveCodesAsync(userKey);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"캐릭터별 세이브코드 조회 실패: {ex.Message}");
+                return new List<SaveCodeInfo>();
+            }
+        }
+
+        /// <summary>
+        /// 특정 캐릭터의 세이브코드만 조회합니다
+        /// </summary>
+        public async Task<List<SaveCodeInfo>> LoadSaveCodesByCharacterAsync(string characterName)
+        {
+            try
+            {
+                var userKey = await GetCurrentUserKeyAsync();
+                var allSaveCodes = await _databaseService.LoadUserSaveCodesAsync(userKey);
+                
+                // 캐릭터명으로 필터링
+                return allSaveCodes.Where(sc => sc.CharacterName.Equals(characterName, StringComparison.OrdinalIgnoreCase))
+                                  .OrderByDescending(sc => sc.FileDate)
+                                  .ToList();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"특정 캐릭터({characterName}) 세이브코드 조회 실패: {ex.Message}");
+                return new List<SaveCodeInfo>();
+            }
+        }
+
+        /// <summary>
+        /// 저장된 캐릭터 목록을 조회합니다
+        /// </summary>
+        public async Task<List<string>> LoadCharacterListAsync()
+        {
+            try
+            {
+                var userKey = await GetCurrentUserKeyAsync();
+                var allSaveCodes = await _databaseService.LoadUserSaveCodesAsync(userKey);
+                
+                // 캐릭터명 중복 제거하고 정렬
+                return allSaveCodes.Select(sc => sc.CharacterName)
+                                  .Distinct()
+                                  .OrderBy(name => name)
+                                  .ToList();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"캐릭터 목록 조회 실패: {ex.Message}");
+                return new List<string>();
+            }
+        }
+
+        /// <summary>
+        /// 캐릭터별 세이브코드 통계를 가져옵니다
+        /// </summary>
+        public async Task<Dictionary<string, int>> GetCharacterSaveCodeStatsAsync()
+        {
+            try
+            {
+                var userKey = await GetCurrentUserKeyAsync();
+                var allSaveCodes = await _databaseService.LoadUserSaveCodesAsync(userKey);
+                
+                // 캐릭터별 세이브코드 개수 계산
+                return allSaveCodes.GroupBy(sc => sc.CharacterName)
+                                  .ToDictionary(g => g.Key, g => g.Count());
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"캐릭터별 통계 조회 실패: {ex.Message}");
+                return new Dictionary<string, int>();
             }
         }
 
@@ -93,72 +154,52 @@ namespace SaveCodeClassfication.Services
         /// </summary>
         public bool IsCacheValid(AnalysisCache cache, string folderPath, IEnumerable<TxtFileInfo> currentFiles)
         {
-            try
-            {
-                // 폴더 경로가 다르면 캐시 무효
-                if (cache.FolderPath != folderPath)
-                    return false;
-
-                // 파일 개수가 다르면 캐시 무효
-                if (cache.TotalFiles != currentFiles.Count())
-                    return false;
-
-                // 각 파일의 수정 시간 확인
-                foreach (var file in currentFiles)
-                {
-                    var fileName = file.FileName;
-                    var lastWriteTime = File.GetLastWriteTime(file.FilePath);
-
-                    if (!cache.FileHashes.ContainsKey(fileName) || 
-                        cache.FileHashes[fileName] != lastWriteTime)
-                    {
-                        return false;
-                    }
-                }
-
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
+            return _databaseService.IsCacheValid(cache, folderPath, currentFiles);
         }
 
         /// <summary>
-        /// 캐시 정보를 가져옵니다
+        /// 캐시 정보를 반환합니다 (데이터베이스 정보)
         /// </summary>
         public async Task<string> GetCacheInfoAsync()
         {
-            try
+            return await _databaseService.GetDatabaseInfoAsync();
+        }
+
+        /// <summary>
+        /// 데이터베이스 연결을 테스트합니다
+        /// </summary>
+        public async Task<bool> TestDatabaseConnectionAsync()
+        {
+            return await _databaseService.TestConnectionAsync();
+        }
+
+        /// <summary>
+        /// 데이터베이스를 초기화합니다
+        /// </summary>
+        public async Task<bool> InitializeDatabaseAsync()
+        {
+            return await _databaseService.InitializeDatabaseAsync();
+        }
+
+        /// <summary>
+        /// 현재 사용자 키를 가져옵니다
+        /// </summary>
+        private async Task<string> GetCurrentUserKeyAsync()
+        {
+            if (_settingsService != null)
             {
-                if (File.Exists(_cacheFilePath))
+                try
                 {
-                    var cache = await LoadCacheAsync();
-                    if (cache != null)
-                    {
-                        var cacheAge = DateTime.Now - cache.LastAnalyzed;
-                        var ageText = cacheAge.TotalDays >= 1 
-                            ? $"{(int)cacheAge.TotalDays}일 전" 
-                            : cacheAge.TotalHours >= 1 
-                                ? $"{(int)cacheAge.TotalHours}시간 전" 
-                                : $"{(int)cacheAge.TotalMinutes}분 전";
-                        
-                        return $"캐시 있음: {cache.SaveCodes.Count}개 세이브코드 ({ageText})";
-                    }
-                    else
-                    {
-                        return "캐시 상태: 손상된 캐시 파일";
-                    }
+                    var settings = await _settingsService.LoadSettingsAsync();
+                    return settings.CurrentUserKey;
                 }
-                else
+                catch
                 {
-                    return "캐시 상태: 캐시 없음";
+                    // 설정 로드 실패 시 기본값 사용
                 }
             }
-            catch
-            {
-                return "캐시 상태: 확인 실패";
-            }
+            
+            return "default_user";
         }
     }
 }

@@ -37,14 +37,17 @@ namespace SaveCodeClassfication.Services
                 // 캐릭터 이름 매핑 적용
                 var displayName = _nameMapping.GetDisplayCharacterName(characterName);
 
+                // 직업 정보 추출
+                var jobInfo = ExtractJobClass(content);
+
                 // 아이템 정보 추출
                 var items = ExtractItems(content);
 
-                // 기본 스탯 추출
+                // 기본 정보 추출
                 var stats = ExtractStats(content);
 
                 var fileDate = File.GetLastWriteTime(fileInfo.FilePath);
-                var itemsDisplayText = items.Count > 0 ? string.Join(" | ", items) : "아이템 정보 없음";
+                var itemsDisplayText = items.Count > 0 ? string.Join(" | ", items) : "장착된 아이템 없음";
 
                 return new SaveCodeInfo
                 {
@@ -62,7 +65,9 @@ namespace SaveCodeClassfication.Services
                     PhysicalPower = stats.PhysicalPower,
                     MagicalPower = stats.MagicalPower,
                     SpiritualPower = stats.SpiritualPower,
-                    Experience = stats.Experience
+                    Experience = stats.Experience,
+                    JobClass = jobInfo.JobClass,
+                    JobDisplayText = jobInfo.JobDisplayText
                 };
             }
             catch
@@ -107,6 +112,87 @@ namespace SaveCodeClassfication.Services
         }
 
         /// <summary>
+        /// 직업 정보를 추출합니다
+        /// </summary>
+        private (string JobClass, string JobDisplayText) ExtractJobClass(string content)
+        {
+            // 직업 정보를 추출하는 여러 패턴 시도
+            var jobPatterns = new[]
+            {
+                @"call\s+Preload\(\s*[""']직업:\s*([^""']*?)[""']\s*\)",
+                @"직업:\s*(.+?)(?:\s*[""']|\r|\n|$)",
+                @"class:\s*(.+?)(?:\s*[""']|\r|\n|$)",
+                @"job:\s*(.+?)(?:\s*[""']|\r|\n|$)"
+            };
+
+            foreach (var pattern in jobPatterns)
+            {
+                var jobMatch = Regex.Match(content, pattern, RegexOptions.IgnoreCase);
+                if (jobMatch.Success)
+                {
+                    var jobClass = jobMatch.Groups[1].Value.Trim();
+                    // 색상 코드 및 특수 문자 제거
+                    jobClass = Regex.Replace(jobClass, @"\|c[0-9a-fA-F]{8}|\|[rR]|\|", "");
+                    jobClass = jobClass.Trim();
+                    
+                    if (!string.IsNullOrEmpty(jobClass))
+                    {
+                        return (jobClass, GetJobDisplayName(jobClass));
+                    }
+                }
+            }
+
+            // 직업 정보가 없는 경우 능력치를 기반으로 추측
+            var jobFromStats = InferJobFromStats(content);
+            return (jobFromStats, GetJobDisplayName(jobFromStats));
+        }
+
+        /// <summary>
+        /// 능력치를 기반으로 직업을 추측합니다
+        /// </summary>
+        private string InferJobFromStats(string content)
+        {
+            var stats = ExtractStats(content);
+            
+            // 능력치가 숫자로 파싱 가능한지 확인
+            if (int.TryParse(stats.PhysicalPower.Replace(",", ""), out int physical) &&
+                int.TryParse(stats.MagicalPower.Replace(",", ""), out int magical) &&
+                int.TryParse(stats.SpiritualPower.Replace(",", ""), out int spiritual))
+            {
+                // 가장 높은 능력치를 기반으로 직업 추측
+                if (physical >= magical && physical >= spiritual)
+                {
+                    return "무사"; // 물리 계열
+                }
+                else if (magical >= physical && magical >= spiritual)
+                {
+                    return "도사"; // 마법 계열
+                }
+                else if (spiritual >= physical && spiritual >= magical)
+                {
+                    return "선인"; // 영력 계열
+                }
+            }
+
+            return "미분류"; // 직업을 알 수 없는 경우
+        }
+
+        /// <summary>
+        /// 직업의 표시명을 반환합니다
+        /// </summary>
+        private string GetJobDisplayName(string jobClass)
+        {
+            return jobClass switch
+            {
+                "무사" => "?? 무사",
+                "도사" => "?? 도사", 
+                "선인" => "? 선인",
+                "미분류" => "? 미분류",
+                _ => $"?? {jobClass}"
+            };
+        }
+
+        /// <summary>
         /// 아이템 정보를 추출합니다
         /// </summary>
         private List<string> ExtractItems(string content)
@@ -115,7 +201,7 @@ namespace SaveCodeClassfication.Services
             
             for (int i = 1; i <= 6; i++)
             {
-                var itemMatch = Regex.Match(content, $@"call\s+Preload\(\s*[""']아이템{i}:\s*['""]([^'""]*?)['""][""']\s*\)", RegexOptions.IgnoreCase);
+                var itemMatch = Regex.Match(content, $@"call\s+Preload\(\s*[""']장착품{i}:\s*['""]([^'""]*?)['""][""']\s*\)", RegexOptions.IgnoreCase);
                 
                 if (itemMatch.Success)
                 {
@@ -125,7 +211,7 @@ namespace SaveCodeClassfication.Services
                     
                     if (!string.IsNullOrEmpty(itemName))
                     {
-                        items.Add($"아이템{i}: {itemName}");
+                        items.Add($"장착품{i}: {itemName}");
                     }
                 }
             }
@@ -134,7 +220,7 @@ namespace SaveCodeClassfication.Services
         }
 
         /// <summary>
-        /// 기본 스탯을 추출합니다
+        /// 기본 정보를 추출합니다
         /// </summary>
         private (string Level, string Gold, string Wood, string PhysicalPower, 
                 string MagicalPower, string SpiritualPower, string Experience) ExtractStats(string content)
