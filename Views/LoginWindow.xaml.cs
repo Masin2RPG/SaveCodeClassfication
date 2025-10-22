@@ -13,7 +13,6 @@ namespace SaveCodeClassfication.Views
     /// </summary>
     public partial class LoginWindow : Window
     {
-        private DatabaseService? _databaseService;
         private readonly SettingsService _settingsService;
 
         public string LoggedInUserId { get; private set; } = string.Empty;
@@ -26,29 +25,10 @@ namespace SaveCodeClassfication.Views
             
             // 서비스 초기화
             _settingsService = new SettingsService(PathConstants.ConfigFilePath);
-            InitializeDatabaseService();
             
             // Enter 키 이벤트 설정
             TxtUserId.KeyDown += Input_KeyDown;
             TxtPassword.KeyDown += Input_KeyDown;
-        }
-
-        /// <summary>
-        /// 데이터베이스 서비스 초기화
-        /// </summary>
-        private async void InitializeDatabaseService()
-        {
-            try
-            {
-                var settings = await _settingsService.LoadSettingsAsync();
-                _databaseService = new DatabaseService(settings.DatabaseSettings);
-            }
-            catch
-            {
-                // 기본 설정으로 초기화
-                var defaultSettings = new DatabaseSettings();
-                _databaseService = new DatabaseService(defaultSettings);
-            }
         }
 
         /// <summary>
@@ -115,33 +95,42 @@ namespace SaveCodeClassfication.Views
                 var userId = TxtUserId.Text.Trim();
                 var password = TxtPassword.Password;
 
-                if (_databaseService == null)
-                {
-                    WpfMessageBox.Show("데이터베이스 서비스가 초기화되지 않았습니다.", "오류", 
-                                      MessageBoxButton.OK, MessageBoxImage.Error);
-                    return;
-                }
-
-                // UserService를 DatabaseService의 연결 문자열로 초기화
-                UserService userService;
+                // API 기반 데이터베이스 서비스 초기화
+                ApiDatabaseService? apiDatabaseService = null;
                 try
                 {
-                    var connectionString = _databaseService.GetConnectionString();
-                    userService = new UserService(connectionString);
-                    System.Diagnostics.Debug.WriteLine($"UserService 초기화 완료: {connectionString.Substring(0, Math.Min(50, connectionString.Length))}...");
+                    System.Diagnostics.Debug.WriteLine("API 기반 데이터베이스 서비스 초기화 시작...");
+                    
+                    apiDatabaseService = new ApiDatabaseService();
+                    
+                    // API 연결 테스트
+                    var isConnected = await apiDatabaseService.TestConnectionAsync();
+                    
+                    if (!isConnected)
+                    {
+                        WpfMessageBox.Show("API 서버에 연결할 수 없습니다.\n" +
+                                          "API 서버가 실행중인지 확인해주세요.\n" +
+                                          "(기본 주소: http://localhost:5036)", 
+                                          "API 연결 오류", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        return;
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine("API 서버 연결 성공");
+                    }
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"UserService 초기화 실패: {ex.Message}");
-                    WpfMessageBox.Show($"사용자 서비스 초기화에 실패했습니다: {ex.Message}", "초기화 오류", 
-                                      MessageBoxButton.OK, MessageBoxImage.Error);
+                    System.Diagnostics.Debug.WriteLine($"API 서비스 초기화 오류: {ex.Message}");
+                    WpfMessageBox.Show($"API 서비스 초기화 중 오류가 발생했습니다:\n{ex.Message}", 
+                                      "초기화 오류", MessageBoxButton.OK, MessageBoxImage.Error);
                     return;
                 }
 
-                // 상세 로그인 검증 수행 (Admin_Yn 포함)
-                System.Diagnostics.Debug.WriteLine($"로그인 시도: 사용자 ID = {userId}");
-                var loginResult = await userService.ValidateUserWithDetailsAsync(userId, password);
-                System.Diagnostics.Debug.WriteLine($"로그인 검증 결과: IsValid={loginResult.IsValid}, IsAdmin={loginResult.IsAdmin}");
+                // API 기반 로그인 검증
+                System.Diagnostics.Debug.WriteLine($"API 로그인 시도: 사용자 ID = {userId}");
+                var loginResult = await apiDatabaseService.ValidateUserWithDetailsAsync(userId, password);
+                System.Diagnostics.Debug.WriteLine($"API 로그인 결과: IsValid={loginResult.IsValid}, IsAdmin={loginResult.IsAdmin}");
 
                 if (loginResult.IsValid)
                 {

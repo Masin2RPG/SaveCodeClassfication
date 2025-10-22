@@ -13,7 +13,7 @@ namespace SaveCodeClassfication.Views
     /// </summary>
     public partial class TokenGeneratorView : System.Windows.Controls.UserControl
     {
-        private UserService? _userService;
+        private ApiUserService? _apiUserService;
         private string _currentToken = string.Empty;
         private List<TokenInfo> _tokenList = new List<TokenInfo>();
 
@@ -21,13 +21,32 @@ namespace SaveCodeClassfication.Views
         {
             InitializeComponent();
             InitializeControls();
+            InitializeApiService();
+        }
+
+        /// <summary>
+        /// API 기반 서비스 초기화
+        /// </summary>
+        private async void InitializeApiService()
+        {
+            try
+            {
+                _apiUserService = new ApiUserService();
+                
+                // API 연결 테스트 후 토큰 목록 로드
+                _ = LoadTokenListAsync();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"API 사용자 서비스 초기화 오류: {ex.Message}");
+                ShowError($"API 서비스 초기화 실패: {ex.Message}");
+            }
         }
 
         public void SetUserService(UserService userService)
         {
-            _userService = userService;
-            // UserService가 설정되면 토큰 목록을 로드
-            _ = LoadTokenListAsync();
+            // API 기반으로 변경되어 더 이상 사용하지 않음
+            // 호환성을 위해 메서드는 유지하지만 내부에서는 API 서비스 사용
         }
 
         private void InitializeControls()
@@ -46,49 +65,40 @@ namespace SaveCodeClassfication.Views
             GeneratePreviewToken();
         }
 
-        private void GeneratePreviewToken()
+        private async void GeneratePreviewToken()
         {
-            if (_userService != null)
+            if (_apiUserService != null)
             {
                 int length = (int)SliderTokenLength.Value;
-                _currentToken = _userService.GenerateRandomToken(length);
+                _currentToken = await _apiUserService.GenerateRandomTokenAsync(length);
                 TxtPreviewToken.Text = _currentToken;
             }
         }
 
         private async Task LoadTokenListAsync()
         {
-            if (_userService == null) return;
+            if (_apiUserService == null) return;
 
             try
             {
-                System.Diagnostics.Debug.WriteLine("=== 토큰 목록 로드 시작 ===");
+                System.Diagnostics.Debug.WriteLine("=== API 기반 토큰 목록 로드 시작 ===");
                 
-                // 먼저 테이블 존재 여부 확인
-                var tableExists = await _userService.CheckTokenTableExistsAsync();
-                if (!tableExists)
-                {
-                    ShowError("user_auth_tokens 테이블을 찾을 수 없습니다.");
-                    return;
-                }
+                _tokenList = await _apiUserService.GetAllTokensAsync();
                 
-                System.Diagnostics.Debug.WriteLine("테이블 확인 완료, 토큰 목록 조회 시작");
-                _tokenList = await _userService.GetAllTokensAsync();
-                
-                System.Diagnostics.Debug.WriteLine($"조회된 토큰 개수: {_tokenList.Count}");
+                System.Diagnostics.Debug.WriteLine($"API에서 조회된 토큰 개수: {_tokenList.Count}");
                 
                 DataGridTokens.ItemsSource = null; // 기존 바인딩 해제
                 DataGridTokens.ItemsSource = _tokenList; // 새로운 데이터 바인딩
                 
                 UpdateTokenCount();
                 
-                System.Diagnostics.Debug.WriteLine("토큰 목록 UI 업데이트 완료");
+                System.Diagnostics.Debug.WriteLine("API 기반 토큰 목록 UI 업데이트 완료");
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"토큰 목록 로드 오류: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"API 토큰 목록 로드 오류: {ex.Message}");
                 System.Diagnostics.Debug.WriteLine($"스택 트레이스: {ex.StackTrace}");
-                ShowError($"토큰 목록을 불러오는 중 오류가 발생했습니다: {ex.Message}");
+                ShowError($"API를 통한 토큰 목록 조회 중 오류가 발생했습니다: {ex.Message}");
             }
         }
 
@@ -109,9 +119,9 @@ namespace SaveCodeClassfication.Views
 
         private async void BtnGenerateToken_Click(object sender, RoutedEventArgs e)
         {
-            if (_userService == null)
+            if (_apiUserService == null)
             {
-                ShowError("사용자 서비스가 초기화되지 않았습니다.");
+                ShowError("API 사용자 서비스가 초기화되지 않았습니다.");
                 return;
             }
 
@@ -128,29 +138,29 @@ namespace SaveCodeClassfication.Views
                 BtnGenerateToken.Content = "생성 중...";
 
                 var effectiveDate = DatePickerEffective.SelectedDate.Value;
-                System.Diagnostics.Debug.WriteLine($"토큰 생성 시도: Date={effectiveDate:yyyy-MM-dd}, Token={_currentToken}");
+                System.Diagnostics.Debug.WriteLine($"API 토큰 생성 시도: Date={effectiveDate:yyyy-MM-dd}, Token={_currentToken}");
                 
-                var result = await _userService.CreateAuthTokenAsync(effectiveDate, _currentToken);
+                var result = await _apiUserService.CreateAuthTokenAsync(effectiveDate, _currentToken);
 
                 if (result.IsSuccess)
                 {
-                    System.Diagnostics.Debug.WriteLine("토큰 생성 성공! 목록 새로고침 시작...");
+                    System.Diagnostics.Debug.WriteLine("API 토큰 생성 성공! 목록 새로고침 시작...");
                     ShowSuccess(result.GeneratedToken, effectiveDate);
                     
                     // 토큰 목록 새로고침
                     await LoadTokenListAsync();
-                    System.Diagnostics.Debug.WriteLine("토큰 목록 새로고침 완료");
+                    System.Diagnostics.Debug.WriteLine("API 기반 토큰 목록 새로고침 완료");
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine($"토큰 생성 실패: {result.ErrorMessage}");
+                    System.Diagnostics.Debug.WriteLine($"API 토큰 생성 실패: {result.ErrorMessage}");
                     ShowError(result.ErrorMessage);
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"토큰 생성 예외 발생: {ex.Message}");
-                ShowError($"토큰 생성 중 오류가 발생했습니다: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"API 토큰 생성 예외 발생: {ex.Message}");
+                ShowError($"API를 통한 토큰 생성 중 오류가 발생했습니다: {ex.Message}");
             }
             finally
             {
@@ -172,7 +182,7 @@ namespace SaveCodeClassfication.Views
 
         private async void BtnRefreshTokenList_Click(object sender, RoutedEventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine("=== 수동 토큰 목록 새로고침 버튼 클릭 ===");
+            System.Diagnostics.Debug.WriteLine("=== API 기반 수동 토큰 목록 새로고침 버튼 클릭 ===");
             
             try
             {
@@ -182,11 +192,11 @@ namespace SaveCodeClassfication.Views
                 
                 await LoadTokenListAsync();
                 
-                System.Diagnostics.Debug.WriteLine("수동 새로고침 완료");
+                System.Diagnostics.Debug.WriteLine("API 기반 수동 새로고침 완료");
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"수동 새로고침 오류: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"API 기반 수동 새로고침 오류: {ex.Message}");
             }
             finally
             {
@@ -197,9 +207,9 @@ namespace SaveCodeClassfication.Views
 
         private async void BtnEditToken_Click(object sender, RoutedEventArgs e)
         {
-            if (sender is System.Windows.Controls.Button button && button.Tag is TokenInfo tokenInfo && _userService != null)
+            if (sender is System.Windows.Controls.Button button && button.Tag is TokenInfo tokenInfo && _apiUserService != null)
             {
-                var editDialog = new TokenEditDialog(_userService, tokenInfo);
+                var editDialog = new TokenEditDialog(_apiUserService, tokenInfo);
                 editDialog.Owner = Window.GetWindow(this);
                 
                 if (editDialog.ShowDialog() == true && editDialog.IsUpdated)
@@ -212,7 +222,7 @@ namespace SaveCodeClassfication.Views
 
         private async void BtnDeleteToken_Click(object sender, RoutedEventArgs e)
         {
-            if (sender is System.Windows.Controls.Button button && button.Tag is TokenInfo tokenInfo && _userService != null)
+            if (sender is System.Windows.Controls.Button button && button.Tag is TokenInfo tokenInfo && _apiUserService != null)
             {
                 var result = System.Windows.MessageBox.Show(
                     $"토큰 '{tokenInfo.Auth_tokens}'을(를) 정말 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다.",
@@ -224,7 +234,7 @@ namespace SaveCodeClassfication.Views
                 {
                     try
                     {
-                        var deleteResult = await _userService.DeleteTokenAsync(tokenInfo.Auth_tokens);
+                        var deleteResult = await _apiUserService.DeleteTokenAsync(tokenInfo.Auth_tokens);
                         
                         if (deleteResult.IsSuccess)
                         {
@@ -241,7 +251,7 @@ namespace SaveCodeClassfication.Views
                     }
                     catch (Exception ex)
                     {
-                        System.Windows.MessageBox.Show($"토큰 삭제 중 오류가 발생했습니다: {ex.Message}", "오류", 
+                        System.Windows.MessageBox.Show($"API를 통한 토큰 삭제 중 오류가 발생했습니다: {ex.Message}", "오류", 
                                       MessageBoxButton.OK, MessageBoxImage.Error);
                     }
                 }

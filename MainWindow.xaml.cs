@@ -30,13 +30,12 @@ namespace SaveCodeClassfication
         // 간단한 날짜 정렬 시스템
         private SimpleSortSettings _simpleSortSettings = new();
 
-        // Services
+        // API 기반 Services
         private readonly SettingsService _settingsService;
         private readonly CharacterNameMappingService _nameMappingService;
         private readonly SaveCodeParserService _parserService;
-        private DatabaseService _databaseService;
         private CacheService _cacheService;
-        private UserService _userService; // 토큰 생성을 위한 UserService 추가
+        private ApiUserService _apiUserService; // API 기반 사용자 서비스
 
         // 로그인 사용자 정보
         public string LoggedInUserId { get; set; } = string.Empty;
@@ -48,23 +47,25 @@ namespace SaveCodeClassfication
         {
             try
             {
-                System.Diagnostics.Debug.WriteLine("=== MainWindow 생성자 시작 ===");
+                System.Diagnostics.Debug.WriteLine("=== MainWindow 생성자 시작 (API 기반) ===");
                 
                 InitializeComponent();
                 System.Diagnostics.Debug.WriteLine("InitializeComponent 완료");
                 
                 // 기본 서비스만 초기화
-                System.Diagnostics.Debug.WriteLine("기본 Services 초기화 중...");
+                System.Diagnostics.Debug.WriteLine("API 기반 Services 초기화 중...");
                 _settingsService = new SettingsService(PathConstants.ConfigFilePath);
                 
-                // 기본 데이터베이스 서비스 초기화
-                var defaultDbSettings = new DatabaseSettings();
-                _databaseService = new DatabaseService(defaultDbSettings);
-                _cacheService = new CacheService(_databaseService, _settingsService);
-                _userService = new UserService(defaultDbSettings.GetConnectionString());
+                // API 기반 데이터베이스 서비스 초기화
+                var apiDatabaseService = new ApiDatabaseService();
+                _cacheService = new CacheService(apiDatabaseService, _settingsService);
+                
+                // API 기반 사용자 서비스 초기화
+                _apiUserService = new ApiUserService();
+                
                 _nameMappingService = new CharacterNameMappingService(PathConstants.CharNameMappingPath);
                 _parserService = new SaveCodeParserService(_nameMappingService);
-                System.Diagnostics.Debug.WriteLine("기본 Services 초기화 완료");
+                System.Diagnostics.Debug.WriteLine("API 기반 Services 초기화 완료");
                 
                 // UI 기본 설정
                 System.Diagnostics.Debug.WriteLine("UI 기본 설정 중...");
@@ -72,7 +73,7 @@ namespace SaveCodeClassfication
                 LstSaveCodes.ItemsSource = _currentSaveCodes;
                 System.Diagnostics.Debug.WriteLine("UI 기본 설정 완료");
                 
-                System.Diagnostics.Debug.WriteLine("=== MainWindow 생성자 완료 ===");
+                System.Diagnostics.Debug.WriteLine("=== MainWindow 생성자 완료 (API 기반) ===");
             }
             catch (Exception ex)
             {
@@ -93,7 +94,7 @@ namespace SaveCodeClassfication
         {
             try
             {
-                System.Diagnostics.Debug.WriteLine("=== PostInitializeAsync 시작 ===");
+                System.Diagnostics.Debug.WriteLine("=== PostInitializeAsync 시작 (API 기반) ===");
                 
                 // 사용자 정보 설정 (UI 스레드에서 직접 실행)
                 if (!string.IsNullOrEmpty(LoggedInUserId))
@@ -107,13 +108,15 @@ namespace SaveCodeClassfication
                     System.Diagnostics.Debug.WriteLine("토큰 생성 탭 설정 완료");
                 }
                 
-                // TokenGeneratorControl 설정
+                // TokenGeneratorControl 설정 (API 기반)
                 try
                 {
-                    if (TokenGeneratorControl != null && _userService != null)
+                    if (TokenGeneratorControl != null && _apiUserService != null)
                     {
-                        TokenGeneratorControl.SetUserService(_userService);
-                        System.Diagnostics.Debug.WriteLine("TokenGeneratorControl 설정 완료");
+                        // TokenGeneratorView에서 SetUserService 메서드는 호환성을 위해 유지하지만
+                        // 내부적으로는 API 서비스를 사용합니다
+                        TokenGeneratorControl.SetUserService(null!); // API 기반으로 자동 초기화됨
+                        System.Diagnostics.Debug.WriteLine("TokenGeneratorControl API 기반 설정 완료");
                     }
                 }
                 catch (Exception tokenEx)
@@ -121,7 +124,7 @@ namespace SaveCodeClassfication
                     System.Diagnostics.Debug.WriteLine($"TokenGeneratorControl 설정 오류: {tokenEx.Message}");
                 }
                 
-                System.Diagnostics.Debug.WriteLine("=== PostInitializeAsync 완료 (간소화 버전) ===");
+                System.Diagnostics.Debug.WriteLine("=== PostInitializeAsync 완료 (API 기반) ===");
                 await Task.CompletedTask; // 비동기 메서드 형식 유지
             }
             catch (Exception ex)
@@ -134,13 +137,13 @@ namespace SaveCodeClassfication
 
         #region Initialization
         /// <summary>
-        /// 애플리케이션 초기화
+        /// 애플리케이션 초기화 (API 기반)
         /// </summary>
         private async Task InitializeApplicationAsync()
         {
             try
             {
-                System.Diagnostics.Debug.WriteLine("=== InitializeApplicationAsync 시작 ===");
+                System.Diagnostics.Debug.WriteLine("=== InitializeApplicationAsync 시작 (API 기반) ===");
                 
                 // 설정 로드 및 정렬 옵션 설정
                 System.Diagnostics.Debug.WriteLine("설정 로드 중...");
@@ -148,45 +151,35 @@ namespace SaveCodeClassfication
                 _simpleSortSettings = settings.SimpleSortSettings;
                 System.Diagnostics.Debug.WriteLine("설정 로드 완료");
                 
-                // 데이터베이스 서비스 재초기화 (설정에서 로드된 값으로)
-                System.Diagnostics.Debug.WriteLine("데이터베이스 서비스 재초기화 중...");
-                _databaseService = new DatabaseService(settings.DatabaseSettings);
-                _cacheService = new CacheService(_databaseService, _settingsService);
-                System.Diagnostics.Debug.WriteLine("데이터베이스 서비스 재초기화 완료");
+                // API 서버 연결 테스트
+                System.Diagnostics.Debug.WriteLine("API 서버 연결 테스트 중...");
+                UpdateStatus("API 서버 연결을 확인하는 중...");
+                var apiConnected = await _cacheService.TestDatabaseConnectionAsync();
                 
-                // UserService 재초기화 (설정에서 로드된 연결 문자열로)
-                System.Diagnostics.Debug.WriteLine("UserService 재초기화 중...");
-                _userService = new UserService(settings.DatabaseSettings.GetConnectionString());
-                System.Diagnostics.Debug.WriteLine("UserService 재초기화 완료");
-
-                // 데이터베이스 연결 테스트 및 초기화
-                System.Diagnostics.Debug.WriteLine("데이터베이스 연결 테스트 중...");
-                UpdateStatus("데이터베이스 연결을 확인하는 중...");
-                var dbConnected = await _cacheService.TestDatabaseConnectionAsync();
-                
-                if (dbConnected)
+                if (apiConnected)
                 {
-                    System.Diagnostics.Debug.WriteLine("데이터베이스 연결 성공");
-                    UpdateStatus("데이터베이스 테이블을 초기화하는 중...");
-                    var dbInitialized = await _cacheService.InitializeDatabaseAsync();
+                    System.Diagnostics.Debug.WriteLine("API 서버 연결 성공");
+                    UpdateStatus("API 서버 연결 성공");
                     
-                    if (dbInitialized)
+                    // API 서버 초기화 확인
+                    UpdateStatus("API 서버 초기화 상태 확인 중...");
+                    var apiInitialized = await _cacheService.InitializeDatabaseAsync();
+                    
+                    if (apiInitialized)
                     {
-                        System.Diagnostics.Debug.WriteLine("데이터베이스 초기화 성공");
-                        UpdateStatus("데이터베이스 연결 성공");
+                        System.Diagnostics.Debug.WriteLine("API 서버 초기화 확인 완료");
+                        UpdateStatus("API 서버 준비 완료");
                     }
                     else
                     {
-                        System.Diagnostics.Debug.WriteLine("데이터베이스 초기화 실패");
-                        UpdateStatus("데이터베이스 초기화 실패");
-                        // 초기화 실패 시에도 계속 진행
+                        System.Diagnostics.Debug.WriteLine("API 서버 초기화 상태 확인 실패");
+                        UpdateStatus("API 서버 초기화 상태 확인 실패");
                     }
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine("데이터베이스 연결 실패");
-                    UpdateStatus("데이터베이스 연결 실패");
-                    // 연결 실패 시에도 계속 진행
+                    System.Diagnostics.Debug.WriteLine("API 서버 연결 실패");
+                    UpdateStatus("API 서버 연결 실패 - 오프라인 모드로 동작");
                 }
                 
                 // 캐릭터 이름 매핑 로드
@@ -211,17 +204,17 @@ namespace SaveCodeClassfication
                     UpdateStatus($"캐릭터 이름 매핑 로드 오류: {mappingEx.Message}");
                 }
 
-                // 데이터베이스 정보 업데이트
+                // API를 통한 데이터베이스 정보 업데이트
                 try
                 {
-                    System.Diagnostics.Debug.WriteLine("데이터베이스 정보 업데이트 중...");
+                    System.Diagnostics.Debug.WriteLine("API를 통한 데이터베이스 정보 업데이트 중...");
                     await UpdateCacheInfoAsync();
-                    System.Diagnostics.Debug.WriteLine("데이터베이스 정보 업데이트 완료");
+                    System.Diagnostics.Debug.WriteLine("API 기반 데이터베이스 정보 업데이트 완료");
                 }
                 catch (Exception cacheInfoEx)
                 {
-                    System.Diagnostics.Debug.WriteLine($"데이터베이스 정보 업데이트 오류: {cacheInfoEx.Message}");
-                    UpdateStatus($"데이터베이스 정보 업데이트 오류: {cacheInfoEx.Message}");
+                    System.Diagnostics.Debug.WriteLine($"API 기반 데이터베이스 정보 업데이트 오류: {cacheInfoEx.Message}");
+                    UpdateStatus($"API 기반 데이터베이스 정보 업데이트 오류: {cacheInfoEx.Message}");
                 }
                 
                 // 폴더 로드
@@ -247,7 +240,7 @@ namespace SaveCodeClassfication
                     UpdateStatus($"폴더 로드 오류: {folderEx.Message}");
                 }
                 
-                System.Diagnostics.Debug.WriteLine("=== InitializeApplicationAsync 완료 ===");
+                System.Diagnostics.Debug.WriteLine("=== InitializeApplicationAsync 완료 (API 기반) ===");
             }
             catch (Exception ex)
             {
@@ -392,44 +385,44 @@ namespace SaveCodeClassfication
         }
 
         /// <summary>
-        /// 캐시를 처리합니다
+        /// API 기반 캐시를 처리합니다
         /// </summary>
         private async Task HandleCacheAsync(string folderPath, string[] txtFiles, bool autoLoad)
         {
-            UpdateStatus("데이터베이스에서 저작된 세이브 코드를 확인하는 중...");
+            UpdateStatus("API를 통해 저장된 세이브 코드를 확인하는 중...");
             
-            // 데이터베이스에서 데이터 조회 시도
+            // API를 통해 데이터베이스에서 데이터 조회 시도
             await LoadCharactersFromDatabase();
             
             if (_characters.Count > 0)
             {
-                var message = $"데이터베이스에서 로드 완료: {_characters.Count}개 캐릭터를 찾았습니다.";
+                var message = $"API를 통한 데이터베이스 로드 완료: {_characters.Count}개 캐릭터를 찾았습니다.";
                 UpdateStatus(message);
                 
                 if (!autoLoad)
                 {
-                    WpfMessageBox.Show($"데이터베이스에서 기존 세이브 코드를 로드했습니다!\n{_characters.Count}개의 캐릭터를 찾았습니다.\n\n최신 분석이 필요하면 '파일 분석' 버튼을 클릭하세요.", 
-                                      "데이터베이스 로드 완료", MessageBoxButton.OK, MessageBoxImage.Information);
+                    System.Windows.MessageBox.Show($"API를 통해 데이터베이스에서 기존 세이브 코드를 로드했습니다!\n{_characters.Count}개의 캐릭터를 찾았습니다.\n\n최신 분석이 필요하면 '파일 분석' 버튼을 클릭하세요.", 
+                                      "API 기반 데이터베이스 로드 완료", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
             }
             else
             {
                 var message = autoLoad 
-                    ? $"자동 로드 완료: {txtFiles.Length}개의 TXT 파일을 찾았습니다. 데이터베이스에 저장된 데이터가 없어 분석이 필요합니다."
-                    : $"{txtFiles.Length}개의 TXT 파일을 찾았습니다. 데이터베이스에 저장된 데이터가 없습니다. 파일 분석을 진행해주세요.";
+                    ? $"자동 로드 완료: {txtFiles.Length}개의 TXT 파일을 찾았습니다. API 서버에 저장된 데이터가 없어 분석이 필요합니다."
+                    : $"{txtFiles.Length}개의 TXT 파일을 찾았습니다. API 서버에 저장된 데이터가 없습니다. 파일 분석을 진행해주세요.";
                 
                 UpdateStatus(message);
                 
                 if (!autoLoad)
                 {
-                    WpfMessageBox.Show($"{txtFiles.Length}개의 TXT 파일을 찾았습니다.\n데이터베이스에 저장된 세이브 코드가 없습니다.\n\n'파일 분석' 버튼을 클릭하여 캐릭터별로 분류하세요.", 
+                    System.Windows.MessageBox.Show($"{txtFiles.Length}개의 TXT 파일을 찾았습니다.\nAPI 서버에 저장된 세이브 코드가 없습니다.\n\n'파일 분석' 버튼을 클릭하여 캐릭터별로 분류하세요.", 
                                       "분석 필요", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
             }
         }
 
         /// <summary>
-        /// 선택된 폴더 경로를 저장합니다
+        /// 폴더 선택 경로를 저장합니다
         /// </summary>
         private async Task SaveSelectedFolderPathAsync(string folderPath)
         {
@@ -514,14 +507,14 @@ namespace SaveCodeClassfication
         }
 
         /// <summary>
-        /// 분석 결과를 처리합니다
+        /// 분석 결과를 처리합니다 (API 기반)
         /// </summary>
         private async Task HandleAnalysisResultAsync((List<SaveCodeInfo> SaveCodes, int ValidFiles) result)
         {
             // 분석 완료 메시지
             if (result.SaveCodes.Count == 0)
             {
-                WpfMessageBox.Show("유효한 세이브 코드 파일을 찾을 수 없습니다.\n파일에 '캐릭터:'와 'Code:' 부분이 포함되어 있는지 확인해주세요.", 
+                System.Windows.MessageBox.Show("유효한 세이브 코드 파일을 찾을 수 없습니다.\n파일에 '캐릭터:'와 'Code:' 부분이 포함되어 있는지 확인해주세요.", 
                                   "정보", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
@@ -541,25 +534,25 @@ namespace SaveCodeClassfication
                 System.Diagnostics.Debug.WriteLine($"📋 '{group.Key}': {group.Count()}개 세이브 코드");
             }
 
-            UpdateStatus($"분석 완료: {result.ValidFiles}개의 유효한 세이브 코드 파일을 찾았습니다. 데이터베이스에 저장 중...");
+            UpdateStatus($"분석 완료: {result.ValidFiles}개의 유효한 세이브 코드 파일을 찾았습니다. API를 통해 데이터베이스에 저장 중...");
 
-            // 데이터베이스에 자동 저장
+            // API를 통해 데이터베이스에 자동 저장
             var saveSuccess = await SaveToDatabase(result.SaveCodes);
             
             if (saveSuccess)
             {
-                // 저장 성공 후 데이터베이스에서 데이터 조회해서 표시
-                UpdateStatus("데이터베이스에서 저장된 데이터를 조회하는 중...");
+                // 저장 성공 후 API를 통해 데이터베이스에서 데이터 조회해서 표시
+                UpdateStatus("API를 통해 저장된 데이터를 조회하는 중...");
                 await LoadCharactersFromDatabase();
                 
-                UpdateStatus($"분석 및 저장 완료: {result.ValidFiles}개의 세이브 코드가 데이터베이스에 저장되고 조회되었습니다.");
+                UpdateStatus($"분석 및 저장 완료: {result.ValidFiles}개의 세이브 코드가 API를 통해 데이터베이스에 저장되고 조회되었습니다.");
                 
-                WpfMessageBox.Show($"파일 분석 및 데이터베이스 저장 완료!\n\n분석된 파일: {result.ValidFiles}개\n고유 캐릭터: {characterGroups.Count}개\n데이터베이스에서 조회된 캐릭터: {_characters.Count}개\n\n분석된 세이브 코드가 데이터베이스에 저장되고 화면에 표시되었습니다.", 
+                System.Windows.MessageBox.Show($"파일 분석 및 API 기반 데이터베이스 저장 완료!\n\n분석된 파일: {result.ValidFiles}개\n고유 캐릭터: {characterGroups.Count}개\nAPI에서 조회된 캐릭터: {_characters.Count}개\n\n분석된 세이브 코드가 API를 통해 데이터베이스에 저장되고 화면에 표시되었습니다.", 
                                   "분석 완료", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             else
             {
-                WpfMessageBox.Show($"파일 분석은 완료되었지만 데이터베이스 저장에 실패했습니다.\n\n분석된 파일: {result.ValidFiles}개\n고유 캐릭터: {characterGroups.Count}개\n\n데이터베이스 설정을 확인하고 '조회' 버튼을 사용해서 기존 데이터를 확인해보세요.", 
+                System.Windows.MessageBox.Show($"파일 분석은 완료되었지만 API를 통한 데이터베이스 저장에 실패했습니다.\n\n분석된 파일: {result.ValidFiles}개\n고유 캐릭터: {characterGroups.Count}개\n\nAPI 서버 상태를 확인하고 '조회' 버튼을 사용해서 기존 데이터를 확인해보세요.", 
                                   "저장 실패", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
@@ -573,16 +566,23 @@ namespace SaveCodeClassfication
             {
                 _characters.Clear();
                 
-                // 데이터베이스에서 세이브 코드 조회
-                var saveCodes = await _cacheService.LoadCharacterSaveCodesAsync();
+                // 로그인된 사용자 ID 사용
+                if (string.IsNullOrEmpty(LoggedInUserId))
+                {
+                    UpdateStatus("로그인된 사용자 정보가 없습니다.");
+                    return;
+                }
+                
+                // API를 통해 사용자별 세이브 코드 조회
+                var saveCodes = await _cacheService.LoadCharacterSaveCodesAsync(LoggedInUserId);
                 
                 if (saveCodes.Count == 0)
                 {
-                    UpdateStatus("데이터베이스에 저장된 세이브 코드가 없습니다.");
+                    UpdateStatus($"'{LoggedInUserId}' 사용자의 저장된 세이브 코드가 없습니다.");
                     return;
                 }
 
-                System.Diagnostics.Debug.WriteLine($"=== 데이터베이스에서 {saveCodes.Count}개 세이브 코드 조회 완료 ===");
+                System.Diagnostics.Debug.WriteLine($"=== API를 통해 {saveCodes.Count}개 세이브 코드 조회 완료 (사용자: {LoggedInUserId}) ===");
 
                 // 캐릭터명으로만 그룹화 (파일명과 무관하게)
                 var characterDict = new Dictionary<string, List<SaveCodeInfo>>();
@@ -645,7 +645,7 @@ namespace SaveCodeClassfication
                 UpdateCharacterCountDisplay();
                 UpdateDatabaseSaveButtonState();
                 
-                System.Diagnostics.Debug.WriteLine($"✅ 최종 결과: {_characters.Count}개 고유 캐릭터가 UI에 표시됨");
+                System.Diagnostics.Debug.WriteLine($"✅ API 기반 최종 결과: {_characters.Count}개 고유 캐릭터가 UI에 표시됨 (사용자: {LoggedInUserId})");
                 
                 // 각 캐릭터의 세이브 코드 수 요약
                 foreach (var character in _characters)
@@ -655,27 +655,34 @@ namespace SaveCodeClassfication
             }
             catch (Exception ex)
             {
-                UpdateStatus($"데이터베이스 조회 중 오류: {ex.Message}");
-                System.Diagnostics.Debug.WriteLine($"LoadCharactersFromDatabase 오류: {ex.Message}");
+                UpdateStatus($"API를 통한 데이터베이스 조회 중 오류: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"LoadCharactersFromDatabase API 기반 오류: {ex.Message}");
                 System.Diagnostics.Debug.WriteLine($"스택 트레이스: {ex.StackTrace}");
             }
         }
 
         /// <summary>
-        /// 데이터베이스에 세이브 코드를 저장합니다
+        /// API를 통해 데이터베이스에 세이브 코드를 저장합니다
         /// </summary>
         private async Task<bool> SaveToDatabase(List<SaveCodeInfo> saveCodes)
         {
             try
             {
-                System.Diagnostics.Debug.WriteLine($"=== MainWindow: 데이터베이스 저장 시작 ===");
+                System.Diagnostics.Debug.WriteLine($"=== MainWindow: API 기반 데이터베이스 저장 시작 (사용자: {LoggedInUserId}) ===");
                 System.Diagnostics.Debug.WriteLine($"저장할 세이브 코드 수: {saveCodes.Count}");
 
-                // 데이터베이스 연결 확인
+                // 로그인된 사용자 ID 확인
+                if (string.IsNullOrEmpty(LoggedInUserId))
+                {
+                    UpdateStatus("로그인된 사용자 정보가 없습니다.");
+                    return false;
+                }
+
+                // API 서버 연결 확인
                 var connectionTest = await _cacheService.TestDatabaseConnectionAsync();
                 if (!connectionTest)
                 {
-                    UpdateStatus("데이터베이스 연결 실패");
+                    UpdateStatus("API 서버 연결 실패");
                     return false;
                 }
 
@@ -699,33 +706,33 @@ namespace SaveCodeClassfication
                 // 저장 시작 시간 기록
                 var startTime = DateTime.Now;
 
-                System.Diagnostics.Debug.WriteLine("CacheService.SaveCacheAsync 호출 전");
-                var success = await _cacheService.SaveCacheAsync(cache);
-                System.Diagnostics.Debug.WriteLine($"CacheService.SaveCacheAsync 결과: {success}");
+                System.Diagnostics.Debug.WriteLine($"API 기반 CacheService.SaveCacheAsync 호출 전 (사용자: {LoggedInUserId})");
+                var success = await _cacheService.SaveCacheAsync(cache, LoggedInUserId);
+                System.Diagnostics.Debug.WriteLine($"API 기반 CacheService.SaveCacheAsync 결과: {success}");
                 
                 if (success)
                 {
                     var elapsed = DateTime.Now - startTime;
-                    System.Diagnostics.Debug.WriteLine($"데이터베이스 저장 완료: {saveCodes.Count}개 저장, 소요시간 {elapsed.TotalSeconds:F1}초");
+                    System.Diagnostics.Debug.WriteLine($"API 기반 데이터베이스 저장 완료: {saveCodes.Count}개 저장, 사용자 '{LoggedInUserId}', 소요시간 {elapsed.TotalSeconds:F1}초");
                     
-                    // 데이터베이스 정보 업데이트
+                    // API를 통한 데이터베이스 정보 업데이트
                     await UpdateCacheInfoAsync();
                     return true;
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine("데이터베이스 저장 실패 - 프로시저 실행 오류");
+                    System.Diagnostics.Debug.WriteLine($"API 기반 데이터베이스 저장 실패 (사용자: {LoggedInUserId})");
                     return false;
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"=== MainWindow: 저장 중 예외 발생 ===");
+                System.Diagnostics.Debug.WriteLine($"=== MainWindow: API 기반 저장 중 예외 발생 (사용자: {LoggedInUserId}) ===");
                 System.Diagnostics.Debug.WriteLine($"예외 타입: {ex.GetType().Name}");
                 System.Diagnostics.Debug.WriteLine($"메시지: {ex.Message}");
                 System.Diagnostics.Debug.WriteLine($"스택 트레이스: {ex.StackTrace}");
                 
-                UpdateStatus($"데이터베이스 저장 중 오류: {ex.Message}");
+                UpdateStatus($"API 기반 데이터베이스 저장 중 오류: {ex.Message}");
                 return false;
             }
         }
@@ -1357,33 +1364,33 @@ namespace SaveCodeClassfication
         }
 
         /// <summary>
-        /// 데이터베이스 조회 버튼 클릭 (기존 초기화 버튼)
+        /// API를 통한 데이터베이스 조회 버튼 클릭
         /// </summary>
         private async void BtnClearCharacters_Click(object sender, RoutedEventArgs e)
         {
             try
             {
                 ShowLoadingState(true);
-                UpdateStatus("데이터베이스에서 저장된 세이브 코드를 조회하는 중...");
+                UpdateStatus("API를 통해 저장된 세이브 코드를 조회하는 중...");
                 
                 await LoadCharactersFromDatabase();
                 
                 if (_characters.Count > 0)
                 {
-                    UpdateStatus($"데이터베이스 조회 완료: {_characters.Count}개 캐릭터를 찾았습니다.");
-                    WpfMessageBox.Show($"데이터베이스 조회 완료!\n\n조회된 캐릭터: {_characters.Count}개\n\n저장된 모든 세이브 코드가 화면에 표시됩니다.", 
+                    UpdateStatus($"API 기반 데이터베이스 조회 완료: {_characters.Count}개 캐릭터를 찾았습니다.");
+                    System.Windows.MessageBox.Show($"API를 통한 데이터베이스 조회 완료!\n\n조회된 캐릭터: {_characters.Count}\n\nAPI 서버에 저장된 모든 세이브 코드가 화면에 표시됩니다.", 
                                       "조회 완료", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
                 else
                 {
-                    UpdateStatus("데이터베이스에 저장된 세이브 코드가 없습니다.");
-                    WpfMessageBox.Show("데이터베이스에 저장된 세이브 코드가 없습니다.\n\n먼저 파일을 분석하여 세이브 코드를 저장해주세요.", 
+                    UpdateStatus("API 서버에 저장된 세이브 코드가 없습니다.");
+                    System.Windows.MessageBox.Show("API 서버에 저장된 세이브 코드가 없습니다.\n\n먼저 파일을 분석하여 세이브 코드를 저장해주세요.", 
                                       "조회 결과 없음", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
             }
             catch (Exception ex)
             {
-                ShowError($"데이터베이스 조회 중 오류가 발생했습니다: {ex.Message}");
+                ShowError($"API를 통한 데이터베이스 조회 중 오류가 발생했습니다: {ex.Message}");
             }
             finally
             {
@@ -1392,20 +1399,20 @@ namespace SaveCodeClassfication
         }
 
         /// <summary>
-        /// 현재 분석된 결과를 데이터베이스에 저장하는 버튼 클릭
+        /// 현재 분석된 결과를 API를 통해 데이터베이스에 저장하는 버튼 클릭
         /// </summary>
         private async void BtnSaveToDatabase_Click(object sender, RoutedEventArgs e)
         {
             if (_characters.Count == 0)
             {
-                WpfMessageBox.Show("저장할 분석 결과가 없습니다.\n먼저 파일을 분석해주세요.", "알림", 
+                System.Windows.MessageBox.Show("저장할 분석 결과가 없습니다.\n먼저 파일을 분석해주세요.", "알림", 
                                   MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
-            var result = WpfMessageBox.Show(
-                $"현재 화면에 표시된 {_characters.Count}개 캐릭터의 세이브 코드를 데이터베이스에 저장하시겠습니까?\n\n기존 데이터가 있다면 새로운 데이터로 교체됩니다.",
-                "데이터베이스 저장 확인",
+            var result = System.Windows.MessageBox.Show(
+                $"현재 화면에 표시된 {_characters.Count}개 캐릭터의 세이브 코드를 API를 통해 데이터베이스에 저장하시겠습니까?\n\n기존 데이터가 있다면 새로운 데이터로 교체됩니다.",
+                "API 기반 데이터베이스 저장 확인",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Question);
 
@@ -1414,7 +1421,7 @@ namespace SaveCodeClassfication
                 try
                 {
                     ShowLoadingState(true);
-                    UpdateStatus("데이터베이스에 저장하는 중...");
+                    UpdateStatus("API를 통해 데이터베이스에 저장하는 중...");
 
                     // 현재 분석된 모든 세이브 코드를 수집
                     var allSaveCodes = new List<SaveCodeInfo>();
@@ -1427,20 +1434,20 @@ namespace SaveCodeClassfication
                     
                     if (saveSuccess)
                     {
-                        UpdateStatus($"데이터베이스 저장 완료: {allSaveCodes.Count}개의 세이브 코드가 저장되었습니다.");
-                        WpfMessageBox.Show($"데이터베이스 저장 완료!\n\n저장된 항목: {allSaveCodes.Count}개\n캐릭터 수: {_characters.Count}개\n\n다음번 실행 시 더 빠르게 로드됩니다.", 
+                        UpdateStatus($"API 기반 데이터베이스 저장 완료: {allSaveCodes.Count}개의 세이브 코드가 저장되었습니다.");
+                        System.Windows.MessageBox.Show($"API를 통한 데이터베이스 저장 완료!\n\n저장된 항목: {allSaveCodes.Count}개\n캐릭터 수: {_characters.Count}개\n\n다음번 실행 시 API를 통해 더 빠르게 로드됩니다.", 
                                           "저장 완료", MessageBoxButton.OK, MessageBoxImage.Information);
                     }
                     else
                     {
-                        UpdateStatus("데이터베이스 저장 실패");
-                        WpfMessageBox.Show("데이터베이스 저장에 실패했습니다.\n\n상세한 오류 정보는 Visual Studio의 출력 창(디버그)에서 확인할 수 있습니다.", 
+                        UpdateStatus("API를 통한 데이터베이스 저장 실패");
+                        System.Windows.MessageBox.Show("API를 통한 데이터베이스 저장에 실패했습니다.\n\nAPI 서버 상태를 확인하고 다시 시도해주세요.", 
                                           "저장 실패", MessageBoxButton.OK, MessageBoxImage.Warning);
                     }
                 }
                 catch (Exception ex)
                 {
-                    ShowError($"데이터베이스 저장 중 오류가 발생했습니다: {ex.Message}");
+                    ShowError($"API를 통한 데이터베이스 저장 중 오류가 발생했습니다: {ex.Message}");
                 }
                 finally
                 {

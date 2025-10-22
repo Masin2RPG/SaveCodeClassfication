@@ -199,24 +199,76 @@ namespace SaveCodeClassfication.Services
         {
             var items = new List<string>();
             
+            System.Diagnostics.Debug.WriteLine("=== ExtractItems 시작 ===");
+            
             for (int i = 1; i <= 6; i++)
             {
-                var itemMatch = Regex.Match(content, $@"call\s+Preload\(\s*[""']장착품{i}:\s*['""]([^'""]*?)['""][""']\s*\)", RegexOptions.IgnoreCase);
-                
-                if (itemMatch.Success)
+                // 여러 패턴으로 아이템 추출 시도
+                var patterns = new[]
                 {
-                    var itemName = itemMatch.Groups[1].Value.Trim();
-                    itemName = Regex.Replace(itemName, @"\|c[0-9a-fA-F]{8}|\|[rR]|\|", "");
-                    itemName = itemName.Trim('\'', '"');
-                    
-                    if (!string.IsNullOrEmpty(itemName))
+                    // 패턴 1: '색상코드포함 아이템명'
+                    $@"call\s+Preload\(\s*[""']아이템{i}:\s*'([^']*?)'[""']\s*\)",
+                    // 패턴 2: "색상코드포함 아이템명" 
+                    $@"call\s+Preload\(\s*[""']아이템{i}:\s*""([^""]*?)""[""']\s*\)",
+                    // 패턴 3: 따옴표 없는 경우
+                    $@"call\s+Preload\(\s*[""']아이템{i}:\s*([^""']*?)[""']\s*\)"
+                };
+
+                string itemName = null;
+                
+                foreach (var pattern in patterns)
+                {
+                    var itemMatch = Regex.Match(content, pattern, RegexOptions.IgnoreCase);
+                    if (itemMatch.Success)
                     {
-                        items.Add($"장착품{i}: {itemName}");
+                        itemName = itemMatch.Groups[1].Value.Trim();
+                        System.Diagnostics.Debug.WriteLine($"아이템{i} 원본: '{itemName}'");
+                        break;
                     }
+                }
+                
+                if (!string.IsNullOrEmpty(itemName))
+                {
+                    // 색상 코드 제거
+                    var cleanItemName = RemoveColorCodes(itemName);
+                    System.Diagnostics.Debug.WriteLine($"아이템{i} 정리 후: '{cleanItemName}'");
+                    
+                    if (!string.IsNullOrWhiteSpace(cleanItemName) && 
+                        !cleanItemName.Equals("Empty", StringComparison.OrdinalIgnoreCase))
+                    {
+                        items.Add(cleanItemName);
+                        System.Diagnostics.Debug.WriteLine($"아이템{i} 추가됨: '{cleanItemName}'");
+                    }
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"아이템{i}: 매치되지 않음");
                 }
             }
             
+            System.Diagnostics.Debug.WriteLine($"=== 총 {items.Count}개 아이템 추출 완료 ===");
+            foreach (var item in items)
+            {
+                System.Diagnostics.Debug.WriteLine($"  - {item}");
+            }
+            
             return items;
+        }
+        
+        /// <summary>
+        /// 색상 코드를 제거합니다
+        /// </summary>
+        private string RemoveColorCodes(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return text;
+
+            // 워크래프트 색상 코드 제거: |cff색상코드, |r, |R
+            text = Regex.Replace(text, @"\|cff[a-fA-F0-9]{6}", "", RegexOptions.IgnoreCase);
+            text = Regex.Replace(text, @"\|[rR]", "", RegexOptions.IgnoreCase);
+            text = text.Replace("|R", "").Replace("|r", "");
+            
+            return text.Trim();
         }
 
         /// <summary>

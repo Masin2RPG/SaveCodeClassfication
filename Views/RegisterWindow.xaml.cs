@@ -1,7 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using SaveCodeClassfication.Services;
-using SaveCodeClassfication.Models;  
+using SaveCodeClassfication.Models;
 using SaveCodeClassfication.Utils;
 using System.Threading.Tasks;
 using WpfMessageBox = System.Windows.MessageBox;
@@ -13,7 +13,6 @@ namespace SaveCodeClassfication.Views
     /// </summary>
     public partial class RegisterWindow : Window
     {
-        private DatabaseService? _databaseService;
         private readonly SettingsService _settingsService;
 
         public string RegisteredUserId { get; private set; } = string.Empty;
@@ -24,31 +23,12 @@ namespace SaveCodeClassfication.Views
             
             // 서비스 초기화
             _settingsService = new SettingsService(PathConstants.ConfigFilePath);
-            InitializeDatabaseService();
             
             // Enter 키 이벤트 설정
             TxtUserId.KeyDown += Input_KeyDown;
             TxtPassword.KeyDown += Input_KeyDown;
             TxtConfirmPassword.KeyDown += Input_KeyDown;
             TxtAuthKey.KeyDown += Input_KeyDown;
-        }
-
-        /// <summary>
-        /// 데이터베이스 서비스 초기화
-        /// </summary>
-        private async void InitializeDatabaseService()
-        {
-            try
-            {
-                var settings = await _settingsService.LoadSettingsAsync();
-                _databaseService = new DatabaseService(settings.DatabaseSettings);
-            }
-            catch
-            {
-                // 기본 설정으로 초기화
-                var defaultSettings = new DatabaseSettings();
-                _databaseService = new DatabaseService(defaultSettings);
-            }
         }
 
         /// <summary>
@@ -225,16 +205,35 @@ namespace SaveCodeClassfication.Views
                 var password = TxtPassword.Password;
                 var authKey = TxtAuthKey.Text.Trim();
 
-                if (_databaseService == null)
+                // API 기반 데이터베이스 서비스 초기화
+                ApiDatabaseService? apiDatabaseService = null;
+                try
                 {
-                    WpfMessageBox.Show("데이터베이스 서비스가 초기화되지 않았습니다.", "오류", 
-                                      MessageBoxButton.OK, MessageBoxImage.Error);
+                    UpdateLoadingMessage("API 서버에 연결하는 중...");
+                    apiDatabaseService = new ApiDatabaseService();
+                    
+                    // API 연결 테스트
+                    var isConnected = await apiDatabaseService.TestConnectionAsync();
+                    
+                    if (!isConnected)
+                    {
+                        WpfMessageBox.Show("API 서버에 연결할 수 없습니다.\n" +
+                                          "API 서버가 실행중인지 확인해주세요.\n" +
+                                          "(기본 주소: http://localhost:5036)", 
+                                          "API 연결 오류", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        return;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WpfMessageBox.Show($"API 서비스 초기화 중 오류가 발생했습니다:\n{ex.Message}", 
+                                      "초기화 오류", MessageBoxButton.OK, MessageBoxImage.Error);
                     return;
                 }
 
-                // 1단계: 회원가입 전 검증 수행 (프로시저 호출 전에 먼저 체크)
+                // 1단계: 회원가입 전 검증 수행 (API 기반)
                 UpdateLoadingMessage("사용자 정보를 검증하는 중...");
-                var validationResult = await _databaseService.ValidateRegistrationAsync(userId, authKey);
+                var validationResult = await apiDatabaseService.ValidateRegistrationAsync(userId, authKey);
 
                 if (!validationResult.IsValid)
                 {
@@ -255,9 +254,9 @@ namespace SaveCodeClassfication.Views
                     return;
                 }
 
-                // 2단계: 검증 통과 시 회원가입 프로시저 호출
+                // 2단계: 검증 통과 시 회원가입 API 호출
                 UpdateLoadingMessage("회원가입을 처리하는 중...");
-                var registerResult = await _databaseService.RegisterUserAsync(userId, password, authKey);
+                var registerResult = await apiDatabaseService.RegisterUserAsync(userId, password, authKey);
 
                 if (registerResult.IsSuccess)
                 {

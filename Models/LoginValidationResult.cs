@@ -16,6 +16,11 @@ namespace SaveCodeClassfication.Models
         public bool IsAdmin { get; set; }
 
         /// <summary>
+        /// 사용자 ID
+        /// </summary>
+        public string UserId { get; set; } = string.Empty;
+
+        /// <summary>
         /// 오류 메시지 (실패 시)
         /// </summary>
         public string ErrorMessage { get; set; } = string.Empty;

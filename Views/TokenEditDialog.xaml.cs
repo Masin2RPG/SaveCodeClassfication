@@ -11,15 +11,27 @@ namespace SaveCodeClassfication.Views
     /// </summary>
     public partial class TokenEditDialog : Window
     {
-        private readonly UserService _userService;
+        private readonly UserService? _userService;
+        private readonly ApiUserService? _apiUserService;
         private readonly TokenInfo _tokenInfo;
         
         public bool IsUpdated { get; private set; } = false;
 
+        // 기존 UserService 기반 생성자
         public TokenEditDialog(UserService userService, TokenInfo tokenInfo)
         {
             InitializeComponent();
             _userService = userService;
+            _tokenInfo = tokenInfo;
+            
+            InitializeData();
+        }
+
+        // API 기반 생성자
+        public TokenEditDialog(ApiUserService apiUserService, TokenInfo tokenInfo)
+        {
+            InitializeComponent();
+            _apiUserService = apiUserService;
             _tokenInfo = tokenInfo;
             
             InitializeData();
@@ -70,7 +82,21 @@ namespace SaveCodeClassfication.Views
                 BtnSave.IsEnabled = false;
                 BtnSave.Content = "저장 중...";
 
-                var result = await _userService.UpdateTokenEffectiveDateAsync(_tokenInfo.Auth_tokens, newDate);
+                TokenUpdateResult result;
+
+                // API 기반 또는 직접 DB 접근 방식 선택
+                if (_apiUserService != null)
+                {
+                    result = await _apiUserService.UpdateTokenEffectiveDateAsync(_tokenInfo.Auth_tokens, newDate);
+                }
+                else if (_userService != null)
+                {
+                    result = await _userService.UpdateTokenEffectiveDateAsync(_tokenInfo.Auth_tokens, newDate);
+                }
+                else
+                {
+                    throw new InvalidOperationException("사용자 서비스가 초기화되지 않았습니다.");
+                }
 
                 if (result.IsSuccess)
                 {

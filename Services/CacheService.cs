@@ -1,64 +1,108 @@
-using System.Collections.Generic;
 using SaveCodeClassfication.Models;
+using SaveCodeClassfication.Services;
+using SaveCodeClassfication.Utils;
+using System.IO;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace SaveCodeClassfication.Services
 {
     /// <summary>
-    /// 분석 결과 저장소를 관리하는 서비스 (데이터베이스 기반)
+    /// API 기반 캐시 서비스 - 세이브 코드 데이터의 저장 및 로드를 담당
     /// </summary>
     public class CacheService
     {
-        private readonly DatabaseService _databaseService;
+        private readonly ApiDatabaseService _apiDatabaseService;
         private readonly SettingsService _settingsService;
 
-        public CacheService(DatabaseService databaseService, SettingsService settingsService = null)
+        public CacheService(ApiDatabaseService apiDatabaseService, SettingsService settingsService)
         {
-            _databaseService = databaseService;
-            _settingsService = settingsService;
+            _apiDatabaseService = apiDatabaseService ?? throw new ArgumentNullException(nameof(apiDatabaseService));
+            _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
         }
 
         /// <summary>
-        /// 캐시를 로드합니다 (데이터베이스에서)
+        /// API를 통해 캐시 데이터를 저장합니다
         /// </summary>
-        public Task<AnalysisCache?> LoadCacheAsync()
-        {
-            // 이 메서드는 폴더 경로가 필요하므로 더 이상 사용하지 않음
-            // LoadCacheAsync(string folderPath)를 사용해야 함
-            return Task.FromResult<AnalysisCache?>(null);
-        }
-
-        /// <summary>
-        /// 특정 폴더의 캐시를 로드합니다
-        /// </summary>
-        public async Task<AnalysisCache?> LoadCacheAsync(string folderPath)
-        {
-            return await _databaseService.LoadAnalysisAsync(folderPath);
-        }
-
-        /// <summary>
-        /// 캐시를 저장합니다 (데이터베이스에)
-        /// </summary>
-        public async Task<bool> SaveCacheAsync(AnalysisCache cache)
-        {
-            var fileHashes = cache.FileHashes ?? new Dictionary<string, DateTime>();
-            
-            // 현재 사용자 키 가져오기
-            var userKey = await GetCurrentUserKeyAsync();
-            
-            return await _databaseService.SaveAnalysisAsync(cache.FolderPath, cache.SaveCodes, fileHashes, userKey);
-        }
-
-        /// <summary>
-        /// 캐시를 삭제합니다 (데이터베이스의 사용자 데이터)
-        /// </summary>
-        public bool DeleteCache()
+        public async Task<bool> SaveCacheAsync(AnalysisCache cache, string userId)
         {
             try
             {
-                var userKey = GetCurrentUserKeyAsync().Result;
-                var task = _databaseService.ClearAllDataAsync(userKey);
-                task.Wait();
-                return task.Result;
+                System.Diagnostics.Debug.WriteLine($"=== CacheService: API 기반 저장 시작 (사용자: {userId}) ===");
+                System.Diagnostics.Debug.WriteLine($"저장할 세이브 코드 수: {cache.SaveCodes.Count}");
+
+                var result = await _apiDatabaseService.SaveCacheAsync(cache, userId);
+                
+                System.Diagnostics.Debug.WriteLine($"API 저장 결과: {result}");
+                return result;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"CacheService SaveCacheAsync 오류: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// API를 통해 캐시 데이터를 로드합니다
+        /// </summary>
+        public async Task<AnalysisCache?> LoadCacheAsync(string folderPath, string userId)
+        {
+            try
+            {
+                System.Diagnostics.Debug.WriteLine($"=== CacheService: API 기반 캐시 로드 (사용자: {userId}) ===");
+                
+                var saveCodes = await _apiDatabaseService.LoadUserSaveCodesAsync(userId);
+                
+                if (saveCodes.Count == 0)
+                {
+                    System.Diagnostics.Debug.WriteLine("API에서 세이브 코드를 찾을 수 없음");
+                    return null;
+                }
+
+                System.Diagnostics.Debug.WriteLine($"API에서 {saveCodes.Count}개 세이브 코드 로드 완료");
+                
+                return new AnalysisCache
+                {
+                    FolderPath = folderPath,
+                    LastAnalyzed = DateTime.Now,
+                    FileHashes = new Dictionary<string, DateTime>(),
+                    SaveCodes = saveCodes,
+                    TotalFiles = saveCodes.Count,
+                    Version = "2.0.0"
+                };
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"CacheService LoadCacheAsync 오류: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 캐릭터별 세이브 코드 로드
+        /// </summary>
+        public async Task<List<SaveCodeInfo>> LoadCharacterSaveCodesAsync(string userId)
+        {
+            try
+            {
+                return await _apiDatabaseService.LoadUserSaveCodesAsync(userId);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"LoadCharacterSaveCodesAsync 오류: {ex.Message}");
+                return new List<SaveCodeInfo>();
+            }
+        }
+
+        /// <summary>
+        /// API 서버 연결을 테스트합니다
+        /// </summary>
+        public async Task<bool> TestDatabaseConnectionAsync()
+        {
+            try
+            {
+                return await _apiDatabaseService.TestConnectionAsync();
             }
             catch
             {
@@ -67,139 +111,60 @@ namespace SaveCodeClassfication.Services
         }
 
         /// <summary>
-        /// 저장된 캐릭터별 세이브코드를 조회합니다
-        /// </summary>
-        public async Task<List<SaveCodeInfo>> LoadCharacterSaveCodesAsync()
-        {
-            try
-            {
-                var userKey = await GetCurrentUserKeyAsync();
-                return await _databaseService.LoadUserSaveCodesAsync(userKey);
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"캐릭터별 세이브코드 조회 실패: {ex.Message}");
-                return new List<SaveCodeInfo>();
-            }
-        }
-
-        /// <summary>
-        /// 특정 캐릭터의 세이브코드만 조회합니다
-        /// </summary>
-        public async Task<List<SaveCodeInfo>> LoadSaveCodesByCharacterAsync(string characterName)
-        {
-            try
-            {
-                var userKey = await GetCurrentUserKeyAsync();
-                var allSaveCodes = await _databaseService.LoadUserSaveCodesAsync(userKey);
-                
-                // 캐릭터명으로 필터링
-                return allSaveCodes.Where(sc => sc.CharacterName.Equals(characterName, StringComparison.OrdinalIgnoreCase))
-                                  .OrderByDescending(sc => sc.FileDate)
-                                  .ToList();
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"특정 캐릭터({characterName}) 세이브코드 조회 실패: {ex.Message}");
-                return new List<SaveCodeInfo>();
-            }
-        }
-
-        /// <summary>
-        /// 저장된 캐릭터 목록을 조회합니다
-        /// </summary>
-        public async Task<List<string>> LoadCharacterListAsync()
-        {
-            try
-            {
-                var userKey = await GetCurrentUserKeyAsync();
-                var allSaveCodes = await _databaseService.LoadUserSaveCodesAsync(userKey);
-                
-                // 캐릭터명 중복 제거하고 정렬
-                return allSaveCodes.Select(sc => sc.CharacterName)
-                                  .Distinct()
-                                  .OrderBy(name => name)
-                                  .ToList();
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"캐릭터 목록 조회 실패: {ex.Message}");
-                return new List<string>();
-            }
-        }
-
-        /// <summary>
-        /// 캐릭터별 세이브코드 통계를 가져옵니다
-        /// </summary>
-        public async Task<Dictionary<string, int>> GetCharacterSaveCodeStatsAsync()
-        {
-            try
-            {
-                var userKey = await GetCurrentUserKeyAsync();
-                var allSaveCodes = await _databaseService.LoadUserSaveCodesAsync(userKey);
-                
-                // 캐릭터별 세이브코드 개수 계산
-                return allSaveCodes.GroupBy(sc => sc.CharacterName)
-                                  .ToDictionary(g => g.Key, g => g.Count());
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"캐릭터별 통계 조회 실패: {ex.Message}");
-                return new Dictionary<string, int>();
-            }
-        }
-
-        /// <summary>
-        /// 캐시가 유효한지 확인합니다
-        /// </summary>
-        public bool IsCacheValid(AnalysisCache cache, string folderPath, IEnumerable<TxtFileInfo> currentFiles)
-        {
-            return _databaseService.IsCacheValid(cache, folderPath, currentFiles);
-        }
-
-        /// <summary>
-        /// 캐시 정보를 반환합니다 (데이터베이스 정보)
-        /// </summary>
-        public async Task<string> GetCacheInfoAsync()
-        {
-            return await _databaseService.GetDatabaseInfoAsync();
-        }
-
-        /// <summary>
-        /// 데이터베이스 연결을 테스트합니다
-        /// </summary>
-        public async Task<bool> TestDatabaseConnectionAsync()
-        {
-            return await _databaseService.TestConnectionAsync();
-        }
-
-        /// <summary>
-        /// 데이터베이스를 초기화합니다
+        /// API 서버 초기화를 테스트합니다
         /// </summary>
         public async Task<bool> InitializeDatabaseAsync()
         {
-            return await _databaseService.InitializeDatabaseAsync();
+            try
+            {
+                return await _apiDatabaseService.InitializeDatabaseAsync();
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         /// <summary>
-        /// 현재 사용자 키를 가져옵니다
+        /// API를 통해 데이터베이스 정보를 가져옵니다
         /// </summary>
-        private async Task<string> GetCurrentUserKeyAsync()
+        public async Task<string> GetCacheInfoAsync()
         {
-            if (_settingsService != null)
+            try
             {
-                try
-                {
-                    var settings = await _settingsService.LoadSettingsAsync();
-                    return settings.CurrentUserKey;
-                }
-                catch
-                {
-                    // 설정 로드 실패 시 기본값 사용
-                }
+                return await _apiDatabaseService.GetDatabaseInfoAsync();
             }
-            
-            return "default_user";
+            catch (Exception ex)
+            {
+                return $"API 기반 데이터베이스 정보 조회 실패:\n{ex.Message}";
+            }
+        }
+
+        /// <summary>
+        /// API를 통해 모든 사용자 데이터를 삭제합니다
+        /// </summary>
+        public async Task<bool> ClearAllDataAsync(string userId)
+        {
+            try
+            {
+                return await _apiDatabaseService.ClearAllDataAsync(userId);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"ClearAllDataAsync 오류: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 캐시 유효성을 검사합니다
+        /// </summary>
+        public bool IsCacheValid(AnalysisCache cache, string folderPath, IEnumerable<TxtFileInfo> currentFiles)
+        {
+            // API 기반에서는 항상 최신 데이터를 제공하므로 간단한 검증만 수행
+            return cache != null && 
+                   !string.IsNullOrEmpty(cache.FolderPath) && 
+                   cache.SaveCodes.Count > 0;
         }
     }
 }
